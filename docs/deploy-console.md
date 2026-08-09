@@ -5,9 +5,9 @@ dashboard-а на Cloudflare и GitHub.
 
 За варианта с команди виж [`SETUP.md`](SETUP.md).
 
-> **Едно нещо може да не се получи през браузъра:** индексите по метаданни на
-> Vectorize (стъпка 5в). Приложението работи и без тях, но търсенето се влошава,
-> когато индексът порасне. Прочети стъпката, преди да я прескочиш.
+> **Vectorize не се създава от dashboard-а.** Страницата само показва
+> съществуващите индекси — няма бутон за създаване. Стъпка 4 го решава с едно
+> кликване в GitHub Actions, без терминал.
 
 ---
 
@@ -36,7 +36,8 @@ dashboard-а на Cloudflare и GitHub.
 
 ## 2. Таблиците в D1
 
-Създаването на базата не прави таблици.
+Създаването на базата не прави таблици. Два начина — този тук с копиране, или
+workflow-ът от стъпка 4, който също ги прави.
 
 1. Отвори базата `zapiski` → таб **Console**.
 2. Отвори [`migrations/console-schema.sql`](../migrations/console-schema.sql) в
@@ -62,76 +63,65 @@ dashboard-а на Cloudflare и GitHub.
    останат в Европа).
 4. **Create bucket**.
 
-## 4. Vectorize — търсенето
+## 4. Vectorize — с едно кликване от GitHub
 
-### 4а. Индексът
+Страницата **Storage & Databases → Vectorize** само изброява индексите; бутон за
+създаване няма. Затова в хранилището има готов workflow, който го прави.
 
-1. **Storage & Databases → Vectorize**.
-2. **Create index**.
-3. Name: `zapiski-chunks`
-4. **Dimensions: 1536** — това е таванът на Vectorize и точно затова
-   вгражданията се свиват до 1536. Различно число няма да работи.
-5. **Metric: cosine**
-6. **Create**.
+Той върши и трите неща, които dashboard-ът не може: индекса, двата индекса по
+метаданни, и таблиците в D1 — тоест **може да замести и стъпка 2**.
 
-### 4б. Ако няма бутон „Create index“
+### 4а. Account ID
 
-Тогава индексът може да се направи с една заявка към API-то, която пускаш от
-конзолата на браузъра (F12 → Console), докато си отворил dashboard-а. Трябват
-ти Account ID (вижда се вдясно на Workers страницата) и API token с права
-**Vectorize: Edit** от **My Profile → API Tokens → Create Token**:
+Cloudflare → **Workers & Pages**. Account ID-то се вижда вдясно; също е и в
+адреса: `dash.cloudflare.com/ТУК-Е-ACCOUNT-ID/...`
 
-```js
-await fetch(
-  'https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/vectorize/v2/indexes',
-  {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer API_TOKEN',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: 'zapiski-chunks',
-      config: { dimensions: 1536, metric: 'cosine' },
-    }),
-  },
-).then((r) => r.json()).then(console.log);
-```
+### 4б. API token
 
-### 4в. Индексите по метаданни — прочети това
+1. Горе вдясно на профила → **My Profile → API Tokens → Create Token**.
+2. **Create Custom Token → Get started**.
+3. Permissions — добави два реда:
+   - Account · **Vectorize** · **Edit**
+   - Account · **D1** · **Edit**
+4. Account Resources: своя акаунт.
+5. **Continue to summary → Create Token** и копирай стойността. Показва се само
+   веднъж.
 
-Vectorize позволява филтриране само по свойства, за които има индекс по
-метаданни. Приложението филтрира по `notebookId` и `sourceId`.
+### 4в. Тайните в GitHub
 
-**Ако тези два индекса липсват**, приложението не се чупи: заявката с филтър
-пада, кодът минава на резервния път — взима 60 най-близки пасажа от целия
-индекс и отсява чуждите в паметта. Работи, докато индексът е малък.
+Тези две отиват в GitHub (не в Cloudflare) — ползва ги само workflow-ът:
 
-**Проблемът се появява с растежа.** При много тетрадки 60-те най-близки пасажа
-може да са изцяло от чужди тетрадки и отговорът да излезе „в източниците няма
-отговор“, макар да има. Тоест за истинска употреба тези индекси трябват.
+Хранилището → **Settings → Secrets and variables → Actions → New repository
+secret**:
 
-През браузъра, същият начин като 4б (по един на заявка):
+| Name | Value |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | token-ът от 4б |
+| `CLOUDFLARE_ACCOUNT_ID` | Account ID от 4а |
 
-```js
-for (const property of ['notebookId', 'sourceId']) {
-  const res = await fetch(
-    'https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/vectorize/v2/indexes/zapiski-chunks/metadata_index/create',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer API_TOKEN',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ propertyName: property, indexType: 'string' }),
-    },
-  );
-  console.log(property, await res.json());
-}
-```
+### 4г. Пускане
 
-Двата индекса трябва да се направят **преди** да качиш източници. Vectorize
-индексира по метаданни само вектори, добавени след създаването им.
+Хранилището → таб **Actions** → **Настройка на Cloudflare ресурсите** →
+**Run workflow** → **Run workflow**.
+
+Отнема около минута. Накрая в лога се виждат индексът, индексите по метаданни и
+списъкът с таблиците в D1. Може да се пуска пак без страх — всяка стъпка минава
+спокойно, ако вече е направена.
+
+> **Пусни го, преди да качиш първия източник.** Vectorize индексира по метаданни
+> само вектори, добавени след създаването на индекса. Ако качиш източници преди
+> това, ги изтрий и качи наново.
+
+### Защо тези индекси по метаданни
+
+Vectorize позволява филтриране само по свойства, за които има индекс.
+Приложението филтрира по `notebookId` и `sourceId`.
+
+Ако липсват, приложението не се чупи: заявката с филтър пада и кодът минава на
+резервния път — взима 60 най-близки пасажа от целия индекс и отсява чуждите в
+паметта. Работи, докато индексът е малък. При много тетрадки обаче 60-те
+най-близки може да са изцяло от чужди и отговорът да излезе „в източниците няма
+отговор“, макар да има.
 
 ---
 
