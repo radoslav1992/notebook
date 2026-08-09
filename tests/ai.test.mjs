@@ -128,7 +128,7 @@ t('a Cloudflare model without the binding says which line to add', () => {
     buildAi({
       chatModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
       embedModel: 'gemini-embedding-001',
-      ttsModel: 'gemini-2.5-flash-preview-tts',
+      ttsModel: 'gemini-3.1-flash-tts-preview',
       googleKey: 'k',
     }),
   );
@@ -272,8 +272,8 @@ await at('a missing TTS model comes back listing the ones the key accepts', asyn
       speakError: notFound,
       models: [
         { id: 'gemini-3.6-flash', displayName: '', description: '', methods: ['generateContent'] },
-        { id: 'gemini-2.5-flash-preview-tts', displayName: '', description: '', methods: ['generateContent'] },
         { id: 'gemini-3.1-flash-tts-preview', displayName: '', description: '', methods: ['generateContent'] },
+        { id: 'gemini-3.5-flash-tts-preview', displayName: '', description: '', methods: ['generateContent'] },
       ],
     }),
   );
@@ -281,8 +281,8 @@ await at('a missing TTS model comes back listing the ones the key accepts', asyn
   const err = await tts.speak({ text: 'Здравей' }).then(() => null, (e) => e);
   assert.ok(err instanceof AiError, 'остава AiError, за да стигне преведена');
   assert.match(err.message, /TTS_MODEL/);
-  assert.match(err.message, /gemini-2.5-flash-preview-tts/);
   assert.match(err.message, /gemini-3.1-flash-tts-preview/);
+  assert.match(err.message, /gemini-3.5-flash-tts-preview/);
   // Само TTS моделите, иначе списъкът е безполезен.
   assert.ok(!err.message.includes('gemini-3.6-flash'), err.message);
 });
@@ -290,7 +290,7 @@ await at('a missing TTS model comes back listing the ones the key accepts', asyn
 await at('a key with no speech model at all says exactly that', async () => {
   const tts = googleTts(
     fakeGemini({
-      ttsModel: 'gemini-2.5-flash-preview-tts',
+      ttsModel: 'gemini-3.1-flash-tts-preview',
       speakError: new AiError(404, 'model is not found'),
       models: [{ id: 'gemini-3.6-flash', displayName: '', description: '', methods: ['generateContent'] }],
     }),
@@ -402,6 +402,15 @@ t('the built-in default is a model new keys can still use', () => {
   assert.equal(modelChoices({}).length, 1);
   assert.equal(modelChoices({})[0].value, FALLBACK_CHAT_MODEL);
   assert.equal(resolveChatModel({}, 'gemini-2.5-flash', true), FALLBACK_CHAT_MODEL);
+});
+
+t('the default TTS id keeps its -preview suffix and is not from 2.5', () => {
+  // Двете начина, по които това вече се обърка: „Gemini 3.1 Flash TTS“ в API-то е
+  // `gemini-3.1-flash-tts-preview` (без суфикса → „is not found“), а цялото 2.5
+  // семейство отпадна, включително `gemini-2.5-flash-preview-tts`.
+  assert.ok(FALLBACK_TTS_MODEL.includes('tts'), FALLBACK_TTS_MODEL);
+  assert.ok(!FALLBACK_TTS_MODEL.startsWith('gemini-2.5'), FALLBACK_TTS_MODEL);
+  assert.ok(/-preview$/.test(FALLBACK_TTS_MODEL), 'суфиксът е част от името');
 });
 
 t('with no variables set at all, the defaults still make a working setup', () => {

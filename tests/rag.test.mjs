@@ -61,7 +61,7 @@ const ctx = {
   ai: buildAi({
     chatModel: 'gemini-2.5-flash',
     embedModel: 'gemini-embedding-001',
-    ttsModel: 'gemini-2.5-flash-preview-tts',
+    ttsModel: 'gemini-3.1-flash-tts-preview',
     googleKey: 'test-key',
     googleHost: HOST,
   }),

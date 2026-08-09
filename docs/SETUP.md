@@ -334,7 +334,7 @@ STRIPE_TRIAL_DAYS = "14"
 | `CHAT_MODEL_PRO` | `gemini-2.5-pro` | По-добрият модел, който платените планове може да изберат в Настройки. |
 | `EMBED_MODEL` | `gemini-embedding-001` | Вграждания; смяната иска нов Vectorize индекс. |
 | `EMBED_DIMENSIONS` | по модела | Ширина на вектора, ако моделът не е в таблицата в `ai/select.ts`. |
-| `TTS_MODEL` | `gemini-2.5-flash-preview-tts` | Подкастът; трябва да поддържа multi-speaker. |
+| `TTS_MODEL` | `gemini-3.1-flash-tts-preview` | Подкастът; трябва да поддържа multi-speaker. Суфиксът `-preview` е част от името. |
 | `RESPONSE_LANGUAGE` | `bg` | Език по подразбиране за новите профили. |
 | `STRIPE_TRIAL_DAYS` | няма | Дни безплатен пробен период. |
 
