@@ -63,17 +63,32 @@ jobs:
         run: npm ci
 
       # ── Vectorize ────────────────────────────────────────────────────────
-      # 1536 измерения, защото това е таванът на Vectorize и точно затова
-      # вгражданията се свиват до него. Различно число не работи.
+      # 1536 измерения. `gemini-embedding-001` дава 3072 по подразбиране, но
+      # поддържа съкращаване (Matryoshka) — приложението иска 1536 и нормализира
+      # наново. Числото трябва да съвпада с EMBED_DIMENSIONS в
+      # src/lib/constants.ts; смяната изисква нов индекс, защото ширината на
+      # съществуващ не се мени.
+      # Идемпотентно: `get` казва дали индексът вече го има, а ако `create`
+      # падне (например защото е бил направен междувременно), проверяваме пак и
+      # се провалваме само ако наистина липсва.
       - name: Vectorize индекс
         if: ${{ inputs.create_vectorize }}
         run: |
-          set -o pipefail
-          if npx wrangler vectorize list --json | grep -q "\"$INDEX\""; then
-            echo "Индексът $INDEX вече съществува — пропускам."
+          if npx wrangler vectorize get "$INDEX" > /dev/null 2>&1; then
+            echo "Индексът $INDEX вече съществува — пропускам създаването."
+          elif npx wrangler vectorize create "$INDEX" --dimensions=1536 --metric=cosine; then
+            echo "Индексът $INDEX е създаден."
+          elif npx wrangler vectorize get "$INDEX" > /dev/null 2>&1; then
+            echo "Създаването върна грешка, но индексът съществува — продължавам."
           else
+            echo "::error::Индексът $INDEX не съществува и не можа да бъде създаден."
+            echo "::error::Провери дали token-ът има Account · Vectorize · Edit."
             npx wrangler vectorize create "$INDEX" --dimensions=1536 --metric=cosine
+            exit 1
           fi
+          # Само нашият индекс се пипа; други индекси в акаунта остават както са.
+          echo "Индекси в акаунта (нищо друго не се променя):"
+          npx wrangler vectorize list || true
 
       # Без тези филтрирането по тетрадка и по избрани източници не работи в
       # индекса и приложението минава на резервния път — работи, но губи
@@ -82,15 +97,17 @@ jobs:
       - name: Индекси по метаданни
         if: ${{ inputs.create_vectorize }}
         run: |
+          existing="$(npx wrangler vectorize list-metadata-index "$INDEX" 2>/dev/null || true)"
           for property in notebookId sourceId; do
             echo "── $property"
-            if npx wrangler vectorize create-metadata-index "$INDEX" \
-                 --propertyName="$property" --type=string; then
-              echo "  готово"
+            if printf '%s' "$existing" | grep -q "$property"; then
+              echo "  вече съществува"
+            elif npx wrangler vectorize create-metadata-index "$INDEX" \
+                   --propertyName="$property" --type=string; then
+              echo "  създаден"
             else
-              # Втори опит на вече направен индекс връща грешка — това е добре.
-              echo "  вече съществува или е отказан; проверявам списъка"
-              npx wrangler vectorize list-metadata-index "$INDEX"
+              echo "::warning::Индексът по метаданни за $property не беше създаден."
+              echo "::warning::Приложението ще работи, но търсенето губи точност при много тетрадки."
             fi
           done
 
