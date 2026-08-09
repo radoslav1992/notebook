@@ -1,0 +1,18 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import Chrome from '../../components/Chrome.astro';
+import HomeView from '../../components/HomeView';
+import { listNotebooks } from '../../lib/db';
+import '../../styles/app.css';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+const notebooks = await listNotebooks(env.DB, user.id);
+---
+
+<Base title="Записки — тетрадките ти">
+  <Chrome initials={user.initials} active="home" />
+  <HomeView notebooks={notebooks} displayName={user.displayName} client:load />
+</Base>

@@ -1,0 +1,53 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import Chrome from '../../../components/Chrome.astro';
+import Workspace from '../../../components/Workspace';
+import {
+  getLatestJob,
+  getMindmap,
+  getNotebook,
+  getSettings,
+  listMessages,
+  listNotes,
+  listSources,
+} from '../../../lib/db';
+import '../../../styles/app.css';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+const id = Astro.params.id!;
+
+const notebook = await getNotebook(env.DB, user.id, id);
+if (!notebook) {
+  return Astro.redirect('/app', 302);
+}
+
+const [sources, messages, notes, audioJob, mindmap, settings] = await Promise.all([
+  listSources(env.DB, id),
+  listMessages(env.DB, id),
+  listNotes(env.DB, id),
+  getLatestJob(env.DB, id, 'audio'),
+  getMindmap(env.DB, id),
+  getSettings(env.DB, user.id),
+]);
+
+// Идваме тук след „+ Нова тетрадка“, така че отваряме модала веднага.
+const openAdd = Astro.url.searchParams.get('add') === '1';
+---
+
+<Base title={`${notebook.title} — Записки`}>
+  <Chrome initials={user.initials} />
+  <Workspace
+    notebook={notebook}
+    sources={sources}
+    messages={messages}
+    notes={notes}
+    audioJob={audioJob}
+    mindmap={mindmap}
+    model={settings.chatModel}
+    openAddOnMount={openAdd}
+    client:load
+  />
+</Base>

@@ -1,0 +1,24 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import Chrome from '../../components/Chrome.astro';
+import SettingsView from '../../components/SettingsView';
+import { getSettings } from '../../lib/db';
+import '../../styles/app.css';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+const settings = await getSettings(env.DB, user.id);
+---
+
+<Base title="Настройки — Записки">
+  <Chrome initials={user.initials} active="settings" />
+  <SettingsView
+    settings={settings}
+    user={user}
+    hasServerKey={Boolean(env.GEMINI_API_KEY)}
+    ragBackend={env.RAG_BACKEND === 'gemini' ? 'gemini' : 'vectorize'}
+    client:load
+  />
+</Base>

@@ -1,0 +1,66 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zapiski",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+
+  "observability": {
+    "enabled": true
+  },
+
+  // ── D1: notebooks, sources, chunks, messages, notes, studio jobs ──────────
+  // Create with:  wrangler d1 create zapiski
+  // then paste the returned database_id below.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "zapiski",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // ── R2: original uploads + generated audio overviews ─────────────────────
+  // Create with:  wrangler r2 bucket create zapiski-files
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "zapiski-files"
+    }
+  ],
+
+  // ── Vectorize: chunk embeddings for retrieval ─────────────────────────────
+  // Create with:
+  //   wrangler vectorize create zapiski-chunks --dimensions=1536 --metric=cosine
+  //   wrangler vectorize create-metadata-index zapiski-chunks --property-name=notebookId --type=string
+  //   wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
+  // Vectorize has no local emulator, so `astro dev` proxies this binding to the
+  // real index in your account (Cloudflare "remote bindings"). Everything else
+  // — D1, R2 — still runs locally in .wrangler/state.
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "zapiski-chunks",
+      "experimental_remote": true
+    }
+  ],
+
+  "vars": {
+    // "vectorize" (default) = own RAG over Cloudflare Vectorize with exact page citations.
+    // "gemini"              = Google's managed File Search RAG store.
+    "RAG_BACKEND": "vectorize",
+    "CHAT_MODEL": "gemini-2.5-flash",
+    "EMBED_MODEL": "gemini-embedding-001",
+    "TTS_MODEL": "gemini-2.5-flash-preview-tts",
+    "RESPONSE_LANGUAGE": "bg"
+  }
+
+  // Secrets (set with `wrangler secret put <NAME>`):
+  //   GEMINI_API_KEY  — required, from https://aistudio.google.com/apikey
+  //   SESSION_SECRET  — required, any long random string (openssl rand -hex 32)
+}

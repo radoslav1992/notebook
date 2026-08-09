@@ -1,0 +1,5 @@
+# Копирай като `.dev.vars` за локална работа (файлът е в .gitignore).
+# Ключ от https://aistudio.google.com/apikey
+GEMINI_API_KEY="AIza..."
+# Каквото и да е дълго случайно: openssl rand -hex 32
+SESSION_SECRET="сложи-тук-дълъг-случаен-низ"

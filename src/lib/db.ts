@@ -1,0 +1,792 @@
+import { MAX_SOURCES_PER_NOTEBOOK } from './constants';
+import { newId, now } from './ids';
+import type {
+  Citation,
+  JobKind,
+  JobStatus,
+  Message,
+  Mindmap,
+  Note,
+  NoteKind,
+  Notebook,
+  Settings,
+  Source,
+  SourceKind,
+  SourceStatus,
+  StudioJob,
+} from './types';
+export type { Settings } from './types';
+
+/* ── Тетрадки ─────────────────────────────────────────────────────────────── */
+
+interface NotebookRow {
+  id: string;
+  emoji: string;
+  title: string;
+  blurb: string;
+  store_name: string | null;
+  created_at: number;
+  updated_at: number;
+  source_count?: number;
+}
+
+function toNotebook(r: NotebookRow): Notebook {
+  return {
+    id: r.id,
+    emoji: r.emoji,
+    title: r.title,
+    blurb: r.blurb,
+    storeName: r.store_name,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    sourceCount: r.source_count ?? 0,
+    meta: notebookMeta(r.source_count ?? 0, r.updated_at),
+  };
+}
+
+export async function listNotebooks(db: D1Database, userId: string): Promise<Notebook[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT n.*, (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) AS source_count
+       FROM notebooks n WHERE n.user_id = ? ORDER BY n.updated_at DESC`,
+    )
+    .bind(userId)
+    .all<NotebookRow>();
+  return results.map(toNotebook);
+}
+
+export async function getNotebook(
+  db: D1Database,
+  userId: string,
+  id: string,
+): Promise<Notebook | null> {
+  const row = await db
+    .prepare(
+      `SELECT n.*, (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) AS source_count
+       FROM notebooks n WHERE n.id = ? AND n.user_id = ?`,
+    )
+    .bind(id, userId)
+    .first<NotebookRow>();
+  return row ? toNotebook(row) : null;
+}
+
+export async function createNotebook(
+  db: D1Database,
+  userId: string,
+  input: { title?: string; emoji?: string; blurb?: string } = {},
+): Promise<Notebook> {
+  const ts = now();
+  const id = newId('nb');
+  const title = input.title?.trim() || 'Нова тетрадка';
+  const emoji = input.emoji || '📓';
+  const blurb = input.blurb ?? '';
+  await db
+    .prepare(
+      `INSERT INTO notebooks (id, user_id, emoji, title, blurb, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(id, userId, emoji, title, blurb, ts, ts)
+    .run();
+  return {
+    id,
+    emoji,
+    title,
+    blurb,
+    storeName: null,
+    createdAt: ts,
+    updatedAt: ts,
+    sourceCount: 0,
+    meta: notebookMeta(0, ts),
+  };
+}
+
+export async function updateNotebook(
+  db: D1Database,
+  userId: string,
+  id: string,
+  patch: { title?: string; emoji?: string; blurb?: string; storeName?: string },
+): Promise<void> {
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (patch.title !== undefined) {
+    sets.push('title = ?');
+    binds.push(patch.title);
+  }
+  if (patch.emoji !== undefined) {
+    sets.push('emoji = ?');
+    binds.push(patch.emoji);
+  }
+  if (patch.blurb !== undefined) {
+    sets.push('blurb = ?');
+    binds.push(patch.blurb);
+  }
+  if (patch.storeName !== undefined) {
+    sets.push('store_name = ?');
+    binds.push(patch.storeName);
+  }
+  if (sets.length === 0) return;
+  sets.push('updated_at = ?');
+  binds.push(now(), id, userId);
+  await db
+    .prepare(`UPDATE notebooks SET ${sets.join(', ')} WHERE id = ? AND user_id = ?`)
+    .bind(...binds)
+    .run();
+}
+
+export async function touchNotebook(db: D1Database, id: string): Promise<void> {
+  await db.prepare('UPDATE notebooks SET updated_at = ? WHERE id = ?').bind(now(), id).run();
+}
+
+export async function deleteNotebook(
+  db: D1Database,
+  userId: string,
+  id: string,
+): Promise<void> {
+  // D1 не налага външни ключове по подразбиране, така че чистим ръчно.
+  await db.batch([
+    db.prepare('DELETE FROM chunks WHERE notebook_id = ?').bind(id),
+    db
+      .prepare('DELETE FROM citations WHERE message_id IN (SELECT id FROM messages WHERE notebook_id = ?)')
+      .bind(id),
+    db.prepare('DELETE FROM messages WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM notes WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM sources WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM studio_jobs WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM mindmaps WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM notebooks WHERE id = ? AND user_id = ?').bind(id, userId),
+  ]);
+}
+
+/* ── Източници ───────────────────────────────────────────────────────────── */
+
+interface SourceRow {
+  id: string;
+  notebook_id: string;
+  ordinal: number;
+  kind: string;
+  name: string;
+  sub: string;
+  origin_url: string | null;
+  r2_key: string | null;
+  byte_size: number;
+  page_count: number;
+  char_count: number;
+  selected: number;
+  status: string;
+  error: string | null;
+  doc_name: string | null;
+  created_at: number;
+}
+
+function toSource(r: SourceRow): Source {
+  return {
+    id: r.id,
+    notebookId: r.notebook_id,
+    ordinal: r.ordinal,
+    kind: r.kind as SourceKind,
+    name: r.name,
+    sub: r.sub,
+    originUrl: r.origin_url,
+    r2Key: r.r2_key,
+    byteSize: r.byte_size,
+    pageCount: r.page_count,
+    charCount: r.char_count,
+    selected: r.selected === 1,
+    status: r.status as SourceStatus,
+    error: r.error,
+    docName: r.doc_name,
+    createdAt: r.created_at,
+  };
+}
+
+export async function listSources(db: D1Database, notebookId: string): Promise<Source[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM sources WHERE notebook_id = ? ORDER BY ordinal')
+    .bind(notebookId)
+    .all<SourceRow>();
+  return results.map(toSource);
+}
+
+export async function getSource(
+  db: D1Database,
+  notebookId: string,
+  id: string,
+): Promise<Source | null> {
+  const row = await db
+    .prepare('SELECT * FROM sources WHERE id = ? AND notebook_id = ?')
+    .bind(id, notebookId)
+    .first<SourceRow>();
+  return row ? toSource(row) : null;
+}
+
+export async function createSource(
+  db: D1Database,
+  notebookId: string,
+  input: {
+    kind: SourceKind;
+    name: string;
+    sub?: string;
+    originUrl?: string | null;
+    r2Key?: string | null;
+    byteSize?: number;
+  },
+): Promise<Source> {
+  const row = await db
+    .prepare('SELECT COALESCE(MAX(ordinal), 0) AS n, COUNT(*) AS c FROM sources WHERE notebook_id = ?')
+    .bind(notebookId)
+    .first<{ n: number; c: number }>();
+  if ((row?.c ?? 0) >= MAX_SOURCES_PER_NOTEBOOK) {
+    throw new HttpError(409, `Тетрадката вече има ${MAX_SOURCES_PER_NOTEBOOK} източника.`);
+  }
+  const ordinal = (row?.n ?? 0) + 1;
+  const id = newId('src');
+  const ts = now();
+  await db
+    .prepare(
+      `INSERT INTO sources (id, notebook_id, ordinal, kind, name, sub, origin_url, r2_key, byte_size, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    )
+    .bind(
+      id,
+      notebookId,
+      ordinal,
+      input.kind,
+      input.name,
+      input.sub ?? '',
+      input.originUrl ?? null,
+      input.r2Key ?? null,
+      input.byteSize ?? 0,
+      ts,
+    )
+    .run();
+  return {
+    id,
+    notebookId,
+    ordinal,
+    kind: input.kind,
+    name: input.name,
+    sub: input.sub ?? '',
+    originUrl: input.originUrl ?? null,
+    r2Key: input.r2Key ?? null,
+    byteSize: input.byteSize ?? 0,
+    pageCount: 0,
+    charCount: 0,
+    selected: true,
+    status: 'pending',
+    error: null,
+    docName: null,
+    createdAt: ts,
+  };
+}
+
+export async function updateSourceStatus(
+  db: D1Database,
+  id: string,
+  patch: {
+    status: SourceStatus;
+    error?: string | null;
+    pageCount?: number;
+    charCount?: number;
+    sub?: string;
+    docName?: string | null;
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE sources SET status = ?, error = ?,
+         page_count = COALESCE(?, page_count),
+         char_count = COALESCE(?, char_count),
+         sub        = COALESCE(?, sub),
+         doc_name   = COALESCE(?, doc_name)
+       WHERE id = ?`,
+    )
+    .bind(
+      patch.status,
+      patch.error ?? null,
+      patch.pageCount ?? null,
+      patch.charCount ?? null,
+      patch.sub ?? null,
+      patch.docName ?? null,
+      id,
+    )
+    .run();
+}
+
+export async function setSourceSelected(
+  db: D1Database,
+  notebookId: string,
+  ids: string[],
+  selected: boolean,
+): Promise<void> {
+  if (ids.length === 0) return;
+  const marks = ids.map(() => '?').join(', ');
+  await db
+    .prepare(
+      `UPDATE sources SET selected = ? WHERE notebook_id = ? AND id IN (${marks})`,
+    )
+    .bind(selected ? 1 : 0, notebookId, ...ids)
+    .run();
+}
+
+export async function deleteSource(db: D1Database, notebookId: string, id: string): Promise<void> {
+  await db.batch([
+    db.prepare('DELETE FROM chunks WHERE source_id = ?').bind(id),
+    db.prepare('DELETE FROM sources WHERE id = ? AND notebook_id = ?').bind(id, notebookId),
+  ]);
+}
+
+/* ── Пасажи (chunks) ──────────────────────────────────────────────────────── */
+
+export interface ChunkRow {
+  id: string;
+  source_id: string;
+  notebook_id: string;
+  ordinal: number;
+  page: number | null;
+  locator: string;
+  text: string;
+}
+
+export async function insertChunks(
+  db: D1Database,
+  rows: Omit<ChunkRow, never>[],
+): Promise<void> {
+  const ts = now();
+  // D1 приема до 100 израза на batch; държим се доста под лимита.
+  for (let i = 0; i < rows.length; i += 50) {
+    const slice = rows.slice(i, i + 50);
+    await db.batch(
+      slice.map((c) =>
+        db
+          .prepare(
+            `INSERT INTO chunks (id, source_id, notebook_id, ordinal, page, locator, text, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(c.id, c.source_id, c.notebook_id, c.ordinal, c.page, c.locator, c.text, ts),
+      ),
+    );
+  }
+}
+
+export async function getChunksByIds(db: D1Database, ids: string[]): Promise<ChunkRow[]> {
+  if (ids.length === 0) return [];
+  const marks = ids.map(() => '?').join(', ');
+  const { results } = await db
+    .prepare(`SELECT id, source_id, notebook_id, ordinal, page, locator, text FROM chunks WHERE id IN (${marks})`)
+    .bind(...ids)
+    .all<ChunkRow>();
+  return results;
+}
+
+export async function getChunkIdsForSources(
+  db: D1Database,
+  sourceIds: string[],
+): Promise<string[]> {
+  if (sourceIds.length === 0) return [];
+  const marks = sourceIds.map(() => '?').join(', ');
+  const { results } = await db
+    .prepare(`SELECT id FROM chunks WHERE source_id IN (${marks})`)
+    .bind(...sourceIds)
+    .all<{ id: string }>();
+  return results.map((r) => r.id);
+}
+
+/** Всички пасажи от избраните източници, подредени за четене — за резюмета и подкаст. */
+export async function getChunksForSources(
+  db: D1Database,
+  sourceIds: string[],
+  limit = 400,
+): Promise<ChunkRow[]> {
+  if (sourceIds.length === 0) return [];
+  const marks = sourceIds.map(() => '?').join(', ');
+  const { results } = await db
+    .prepare(
+      `SELECT c.id, c.source_id, c.notebook_id, c.ordinal, c.page, c.locator, c.text
+       FROM chunks c JOIN sources s ON s.id = c.source_id
+       WHERE c.source_id IN (${marks})
+       ORDER BY s.ordinal, c.ordinal
+       LIMIT ?`,
+    )
+    .bind(...sourceIds, limit)
+    .all<ChunkRow>();
+  return results;
+}
+
+/* ── Съобщения и цитати ──────────────────────────────────────────────────── */
+
+export async function listMessages(db: D1Database, notebookId: string): Promise<Message[]> {
+  const { results } = await db
+    .prepare('SELECT id, role, text, created_at FROM messages WHERE notebook_id = ? ORDER BY created_at')
+    .bind(notebookId)
+    .all<{ id: string; role: string; text: string; created_at: number }>();
+  if (results.length === 0) return [];
+
+  const marks = results.map(() => '?').join(', ');
+  const { results: cites } = await db
+    .prepare(
+      `SELECT message_id, ordinal, source_id, label, locator, snippet
+       FROM citations WHERE message_id IN (${marks}) ORDER BY ordinal`,
+    )
+    .bind(...results.map((m) => m.id))
+    .all<{
+      message_id: string;
+      ordinal: number;
+      source_id: string | null;
+      label: string;
+      locator: string;
+      snippet: string;
+    }>();
+
+  const byMessage = new Map<string, Citation[]>();
+  for (const c of cites) {
+    const list = byMessage.get(c.message_id) ?? [];
+    list.push({
+      ordinal: c.ordinal,
+      sourceId: c.source_id,
+      label: c.label,
+      locator: c.locator,
+      snippet: c.snippet,
+    });
+    byMessage.set(c.message_id, list);
+  }
+
+  return results.map((m) => ({
+    id: m.id,
+    role: m.role as 'user' | 'ai',
+    text: m.text,
+    createdAt: m.created_at,
+    citations: byMessage.get(m.id) ?? [],
+  }));
+}
+
+export async function insertMessage(
+  db: D1Database,
+  notebookId: string,
+  role: 'user' | 'ai',
+  text: string,
+  citations: Citation[] = [],
+): Promise<Message> {
+  const id = newId('msg');
+  const ts = now();
+  const stmts = [
+    db
+      .prepare('INSERT INTO messages (id, notebook_id, role, text, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(id, notebookId, role, text, ts),
+    ...citations.map((c) =>
+      db
+        .prepare(
+          `INSERT INTO citations (id, message_id, ordinal, source_id, label, locator, snippet)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(newId('cit'), id, c.ordinal, c.sourceId, c.label, c.locator, c.snippet),
+    ),
+  ];
+  await db.batch(stmts);
+  return { id, role, text, createdAt: ts, citations };
+}
+
+export async function clearMessages(db: D1Database, notebookId: string): Promise<void> {
+  await db.batch([
+    db
+      .prepare('DELETE FROM citations WHERE message_id IN (SELECT id FROM messages WHERE notebook_id = ?)')
+      .bind(notebookId),
+    db.prepare('DELETE FROM messages WHERE notebook_id = ?').bind(notebookId),
+  ]);
+}
+
+/* ── Бележки ─────────────────────────────────────────────────────────────── */
+
+export async function listNotes(db: D1Database, notebookId: string): Promise<Note[]> {
+  const { results } = await db
+    .prepare('SELECT id, kind, title, body, created_at FROM notes WHERE notebook_id = ? ORDER BY created_at DESC')
+    .bind(notebookId)
+    .all<{ id: string; kind: string; title: string; body: string; created_at: number }>();
+  return results.map((n) => ({
+    id: n.id,
+    kind: n.kind as NoteKind,
+    title: n.title,
+    body: n.body,
+    createdAt: n.created_at,
+  }));
+}
+
+export async function createNote(
+  db: D1Database,
+  notebookId: string,
+  input: { kind?: NoteKind; title: string; body?: string },
+): Promise<Note> {
+  const id = newId('note');
+  const ts = now();
+  const kind = input.kind ?? 'note';
+  const body = input.body ?? '';
+  await db
+    .prepare('INSERT INTO notes (id, notebook_id, kind, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, notebookId, kind, input.title, body, ts)
+    .run();
+  return { id, kind, title: input.title, body, createdAt: ts };
+}
+
+export async function updateNote(
+  db: D1Database,
+  notebookId: string,
+  id: string,
+  patch: { title?: string; body?: string },
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE notes SET title = COALESCE(?, title), body = COALESCE(?, body)
+       WHERE id = ? AND notebook_id = ?`,
+    )
+    .bind(patch.title ?? null, patch.body ?? null, id, notebookId)
+    .run();
+}
+
+export async function deleteNote(db: D1Database, notebookId: string, id: string): Promise<void> {
+  await db.prepare('DELETE FROM notes WHERE id = ? AND notebook_id = ?').bind(id, notebookId).run();
+}
+
+/* ── Задачи в студиото ───────────────────────────────────────────────────── */
+
+interface JobRow {
+  id: string;
+  kind: string;
+  status: string;
+  step: string;
+  progress: number;
+  result_json: string | null;
+  r2_key: string | null;
+  duration_s: number;
+  error: string | null;
+}
+
+function toJob(r: JobRow): StudioJob {
+  return {
+    id: r.id,
+    kind: r.kind as JobKind,
+    status: r.status as JobStatus,
+    step: r.step,
+    progress: r.progress,
+    durationS: r.duration_s,
+    error: r.error,
+    result: r.result_json ? safeParse(r.result_json) : undefined,
+  };
+}
+
+export async function createJob(
+  db: D1Database,
+  notebookId: string,
+  kind: JobKind,
+): Promise<StudioJob> {
+  const id = newId('job');
+  const ts = now();
+  await db
+    .prepare(
+      `INSERT INTO studio_jobs (id, notebook_id, kind, status, step, progress, created_at, updated_at)
+       VALUES (?, ?, ?, 'queued', '', 0, ?, ?)`,
+    )
+    .bind(id, notebookId, kind, ts, ts)
+    .run();
+  return { id, kind, status: 'queued', step: '', progress: 0, durationS: 0, error: null };
+}
+
+export async function updateJob(
+  db: D1Database,
+  id: string,
+  patch: {
+    status?: JobStatus;
+    step?: string;
+    progress?: number;
+    resultJson?: string | null;
+    r2Key?: string | null;
+    durationS?: number;
+    error?: string | null;
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE studio_jobs SET
+         status      = COALESCE(?, status),
+         step        = COALESCE(?, step),
+         progress    = COALESCE(?, progress),
+         result_json = COALESCE(?, result_json),
+         r2_key      = COALESCE(?, r2_key),
+         duration_s  = COALESCE(?, duration_s),
+         error       = ?,
+         updated_at  = ?
+       WHERE id = ?`,
+    )
+    .bind(
+      patch.status ?? null,
+      patch.step ?? null,
+      patch.progress ?? null,
+      patch.resultJson ?? null,
+      patch.r2Key ?? null,
+      patch.durationS ?? null,
+      patch.error ?? null,
+      now(),
+      id,
+    )
+    .run();
+}
+
+export async function getJob(
+  db: D1Database,
+  notebookId: string,
+  id: string,
+): Promise<StudioJob | null> {
+  const row = await db
+    .prepare(
+      `SELECT id, kind, status, step, progress, result_json, r2_key, duration_s, error
+       FROM studio_jobs WHERE id = ? AND notebook_id = ?`,
+    )
+    .bind(id, notebookId)
+    .first<JobRow>();
+  if (!row) return null;
+  const job = toJob(row);
+  if (row.r2_key) job.audioUrl = `/api/notebooks/${notebookId}/audio/${row.id}`;
+  return job;
+}
+
+export async function getLatestJob(
+  db: D1Database,
+  notebookId: string,
+  kind: JobKind,
+): Promise<StudioJob | null> {
+  const row = await db
+    .prepare(
+      `SELECT id, kind, status, step, progress, result_json, r2_key, duration_s, error
+       FROM studio_jobs WHERE notebook_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 1`,
+    )
+    .bind(notebookId, kind)
+    .first<JobRow>();
+  if (!row) return null;
+  const job = toJob(row);
+  if (row.r2_key) job.audioUrl = `/api/notebooks/${notebookId}/audio/${row.id}`;
+  return job;
+}
+
+export async function getJobR2Key(
+  db: D1Database,
+  notebookId: string,
+  id: string,
+): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT r2_key FROM studio_jobs WHERE id = ? AND notebook_id = ?')
+    .bind(id, notebookId)
+    .first<{ r2_key: string | null }>();
+  return row?.r2_key ?? null;
+}
+
+/* ── Мисловна карта ──────────────────────────────────────────────────────── */
+
+export async function getMindmap(db: D1Database, notebookId: string): Promise<Mindmap | null> {
+  const row = await db
+    .prepare('SELECT json FROM mindmaps WHERE notebook_id = ?')
+    .bind(notebookId)
+    .first<{ json: string }>();
+  if (!row) return null;
+  return safeParse(row.json) as Mindmap | null;
+}
+
+export async function saveMindmap(
+  db: D1Database,
+  notebookId: string,
+  map: Mindmap,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO mindmaps (notebook_id, json, created_at) VALUES (?, ?, ?)
+       ON CONFLICT(notebook_id) DO UPDATE SET json = excluded.json, created_at = excluded.created_at`,
+    )
+    .bind(notebookId, JSON.stringify(map), now())
+    .run();
+}
+
+/* ── Настройки и профил ──────────────────────────────────────────────────── */
+
+export async function getSettings(db: D1Database, userId: string): Promise<Settings> {
+  const row = await db
+    .prepare('SELECT response_language, offline_mode, chat_model FROM settings WHERE user_id = ?')
+    .bind(userId)
+    .first<{ response_language: string; offline_mode: number; chat_model: string }>();
+  return {
+    responseLanguage: row?.response_language ?? 'bg',
+    offlineMode: (row?.offline_mode ?? 1) === 1,
+    chatModel: row?.chat_model ?? 'gemini-2.5-flash',
+  };
+}
+
+export async function saveSettings(
+  db: D1Database,
+  userId: string,
+  patch: Partial<Settings>,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO settings (user_id, response_language, offline_mode, chat_model, updated_at)
+       VALUES (?, COALESCE(?, 'bg'), COALESCE(?, 1), COALESCE(?, 'gemini-2.5-flash'), ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         response_language = COALESCE(excluded.response_language, settings.response_language),
+         offline_mode      = COALESCE(excluded.offline_mode, settings.offline_mode),
+         chat_model        = COALESCE(excluded.chat_model, settings.chat_model),
+         updated_at        = excluded.updated_at`,
+    )
+    .bind(
+      userId,
+      patch.responseLanguage ?? null,
+      patch.offlineMode === undefined ? null : patch.offlineMode ? 1 : 0,
+      patch.chatModel ?? null,
+      now(),
+    )
+    .run();
+}
+
+export async function saveProfile(
+  db: D1Database,
+  userId: string,
+  displayName: string,
+  initials: string,
+): Promise<void> {
+  await db
+    .prepare('UPDATE users SET display_name = ?, initials = ? WHERE id = ?')
+    .bind(displayName, initials, userId)
+    .run();
+}
+
+/* ── Помощни ─────────────────────────────────────────────────────────────── */
+
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'HttpError';
+  }
+}
+
+function safeParse(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+/** „5 източника · вчера“ */
+export function notebookMeta(sourceCount: number, updatedAt: number): string {
+  const word = sourceCount === 1 ? 'източник' : 'източника';
+  return `${sourceCount} ${word} · ${relativeTime(updatedAt)}`;
+}
+
+export function relativeTime(ts: number): string {
+  const days = Math.floor((Date.now() - ts) / 86_400_000);
+  if (days <= 0) return 'днес';
+  if (days === 1) return 'вчера';
+  if (days < 7) return `преди ${days} дни`;
+  if (days < 14) return 'миналата седмица';
+  if (days < 60) return 'преди месец';
+  const months = Math.round(days / 30);
+  if (months < 12) return `преди ${months} месеца`;
+  return 'преди повече от година';
+}

@@ -1,0 +1,254 @@
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--brand);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--brand-hover);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: var(--r-pill);
+  border: 3px solid var(--bg);
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes eq {
+  0%,
+  100% {
+    height: 6px;
+  }
+  50% {
+    height: 18px;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Споделени примитиви ─────────────────────────────────────────────────── */
+
+.serif {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.pill {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+
+.btn {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  border-radius: var(--r-pill);
+  border: none;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.btn-primary {
+  background: var(--brand);
+  color: var(--bg);
+}
+.btn-primary:hover {
+  background: var(--brand-hover);
+}
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--line-dashed);
+  color: var(--ink);
+}
+.btn-ghost:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.btn-quiet {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 13px;
+}
+.btn-quiet:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2xl);
+}
+
+.cite {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--brand);
+  background: var(--brand-tint);
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  line-height: 1.35;
+}
+.cite:hover {
+  background: #ecd8d7;
+}
+
+.field {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px 13px;
+  width: 100%;
+}
+.field:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+.field::placeholder {
+  color: var(--faint);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 99px;
+  border: 2px solid var(--line);
+  border-top-color: var(--brand);
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Прост markdown, произведен от `renderMarkdown` */
+.md > *:first-child {
+  margin-top: 0;
+}
+.md > *:last-child {
+  margin-bottom: 0;
+}
+.md h3 {
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+.md p {
+  margin: 0 0 10px;
+}
+.md ul,
+.md ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.md li {
+  margin-bottom: 4px;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--brand-tint);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+.md strong {
+  font-weight: 700;
+}

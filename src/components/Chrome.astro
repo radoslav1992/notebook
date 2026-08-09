@@ -1,0 +1,130 @@
+---
+interface Props {
+  initials: string;
+  /** Кой раздел е активен — за подчертаване в лентата. */
+  active?: 'home' | 'settings';
+}
+
+const { initials, active } = Astro.props;
+---
+
+<header class="chrome">
+  <a class="brand" href="/app" aria-label="Записки — начало">
+    <span class="mark">З</span>
+    <span class="name">Записки</span>
+  </a>
+  <div class="spacer"></div>
+  <nav class="actions">
+    <a class="btn-quiet btn" class:list={[{ on: active === 'home' }]} href="/app">Тетрадки</a>
+    <a class="btn-quiet btn" class:list={[{ on: active === 'settings' }]} href="/app/settings"
+      >Настройки</a
+    >
+    <div class="avatar" title="Профил">{initials}</div>
+  </nav>
+</header>
+
+<style>
+  .chrome {
+    height: var(--chrome-h);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 22px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--ink);
+  }
+  .brand:hover {
+    color: var(--ink);
+  }
+
+  .mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--brand);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bg);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .name {
+    font-family: var(--font-serif);
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .actions .btn.on {
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-tint);
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--r-pill);
+    background: var(--brand-tint);
+    color: var(--brand);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12.5px;
+    margin-left: 4px;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 620px) {
+    .chrome {
+      padding: 0 12px;
+      gap: 8px;
+    }
+    .actions {
+      gap: 6px;
+    }
+    .actions .btn {
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+  }
+
+  /* На телефон лентата трябва да се събере, без аватарът да излиза извън екрана. */
+  @media (max-width: 470px) {
+    .name {
+      font-size: 18px;
+    }
+    /* Логото вече води към началния екран, така че връзката е излишна тук. */
+    .actions .btn:first-child {
+      display: none;
+    }
+    .avatar {
+      margin-left: 0;
+    }
+  }
+</style>
