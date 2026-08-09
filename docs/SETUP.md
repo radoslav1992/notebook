@@ -123,15 +123,20 @@ npx wrangler r2 bucket create zapiski-files
 
 ### Vectorize — търсенето
 
-`gemini-embedding-001` се свива до 1536 измерения, защото това е таванът на
-Vectorize. Двата индекса по метаданни правят филтрирането по тетрадка и по
-избрани източници бързо:
+`gemini-embedding-001` връща 3072 числа по подразбиране, но е трениран така, че
+да се съкращава без съществена загуба (Matryoshka). Приложението иска 1536 и
+нормализира наново — числото стои в `EMBED_DIMENSIONS` (`src/lib/constants.ts`)
+и трябва да съвпада с индекса. Двата индекса по метаданни правят филтрирането по
+тетрадка и по избрани източници бързо:
 
 ```bash
 npx wrangler vectorize create zapiski-chunks --dimensions=1536 --metric=cosine
-npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=notebookId --type=string
-npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
+npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=notebookId --type=string
+npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=sourceId --type=string
 ```
+
+Индексите по метаданни се правят **преди** първия качен източник: Vectorize
+индексира по метаданни само вектори, добавени след тяхното създаване.
 
 > **Vectorize няма локален емулатор.** D1 и R2 се въртят локално в
 > `.wrangler/state`, но този binding работи само срещу истинския индекс.
@@ -360,8 +365,8 @@ Cloudflare следи хранилището и пуска ново при вс�
    ```bash
    npx wrangler login
    npx wrangler vectorize create zapiski-chunks --dimensions=1536 --metric=cosine
-   npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=notebookId --type=string
-   npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
+   npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=notebookId --type=string
+   npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=sourceId --type=string
    npm run db:migrate
    ```
 
