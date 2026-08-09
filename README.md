@@ -7,7 +7,8 @@ Astro + Cloudflare Workers за приложението, Gemini API за чет
 подкаста. Дизайнът е пренесен 1:1 от `Zapiski.dc.html` (Claude Design handoff).
 
 **Първи стъпки:** [`docs/SETUP.md`](docs/SETUP.md) — какво трябва да създадеш и с
-кои команди.
+кои команди. Само през браузъра:
+[`docs/deploy-console.md`](docs/deploy-console.md).
 
 ---
 
