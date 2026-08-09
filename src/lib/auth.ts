@@ -1,3 +1,4 @@
+import { HttpError } from './db';
 import { newId, now } from './ids';
 import type { User } from './types';
 
@@ -6,8 +7,19 @@ const SESSION_DAYS = 60;
 const VERIFY_HOURS = 48;
 const RESET_HOURS = 2;
 
-/** PBKDF2-SHA256 през WebCrypto — Workers няма native bcrypt/argon2. */
-const PBKDF2_ITERATIONS = 210_000;
+/**
+ * PBKDF2-SHA256 през WebCrypto — Workers няма native bcrypt/argon2.
+ *
+ * Таванът е на самия Workers runtime: над 100 000 итерации заявката се проваля с
+ * „iteration counts above 100000 are not supported“. Локално ограничение няма,
+ * затова разликата се вижда само след deploy — и удря не само регистрацията, а
+ * и всяко влизане, защото проверката минава през същата функция.
+ *
+ * Форматът носи броя си, тоест числото може да се вдигне, ако Cloudflare вдигне
+ * тавана, без да чупи вече записаните пароли.
+ */
+const MAX_PBKDF2_ITERATIONS = 100_000;
+const PBKDF2_ITERATIONS = MAX_PBKDF2_ITERATIONS;
 
 /* ── Бисквитка и подпис ──────────────────────────────────────────────────── */
 
@@ -103,6 +115,18 @@ export async function verifyPassword(password: string, stored: string): Promise<
   if (parts.length !== 5 || parts[0] !== 'pbkdf2' || parts[1] !== 'sha256') return false;
   const iterations = Number(parts[2]);
   if (!Number.isFinite(iterations) || iterations < 1000) return false;
+
+  // Хеш, записан с повече итерации, отколкото runtime-ът приема, не може да се
+  // провери — `deriveBits` се проваля, вместо да върне грешен резултат. Това не
+  // е „грешна парола“ и не бива да се представя като такава: човекът трябва да
+  // мине през „Забравена парола“, за да си запише нов хеш.
+  if (iterations > MAX_PBKDF2_ITERATIONS) {
+    throw new HttpError(
+      400,
+      'Паролата е записана с настройки, които този сървър вече не поддържа. Ползвай „Забравена парола“, за да зададеш нова.',
+    );
+  }
+
   const salt = fromB64url(parts[3]!);
   const expected = parts[4]!;
   const actual = b64url(await pbkdf2(password, salt, iterations));
@@ -110,6 +134,20 @@ export async function verifyPassword(password: string, stored: string): Promise<
   let diff = 0;
   for (let i = 0; i < actual.length; i++) diff |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
   return diff === 0;
+}
+
+/**
+ * Изразходва толкова време, колкото истинска проверка на парола, без да проверява
+ * нищо. Ползва се при непознат имейл: иначе бързият отговор казва „този адрес
+ * няма профил“.
+ *
+ * Стои тук, а не в маршрута, защото трябва да е с текущия брой итерации. Като
+ * литерал в login.ts вече веднъж изостана и на Workers се проваляше при всяко
+ * влизане с непознат адрес.
+ */
+export async function wastePasswordTime(password: string): Promise<void> {
+  const salt = new Uint8Array(16);
+  await pbkdf2(password, salt, PBKDF2_ITERATIONS);
 }
 
 async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<ArrayBuffer> {

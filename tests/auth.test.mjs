@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 const {
-  hashPassword, verifyPassword, passwordProblem, isValidEmail,
+  hashPassword, verifyPassword, wastePasswordTime, passwordProblem, isValidEmail,
   normalizeEmail, nameFromEmail, initialsOf,
 } = await import('../src/lib/auth.ts');
 const { Stripe } = await import('../src/lib/stripe.ts');
@@ -16,8 +16,11 @@ const t = (name) => { pass++; console.log('  ok  ' + name); };
 
 console.log('passwords');
 const hash = await hashPassword('правилна-парола-42');
-assert.match(hash, /^pbkdf2\$sha256\$210000\$[\w-]+\$[\w-]+$/);
-t('hash carries its own algorithm and iteration count');
+// 100 000 е таванът на Workers runtime: над него `deriveBits` се проваля с
+// „iteration counts above 100000 are not supported“ — и то не само при
+// регистрация, а при всяко влизане, защото проверката е същата функция.
+assert.match(hash, /^pbkdf2\$sha256\$100000\$[\w-]+\$[\w-]+$/);
+t('hash carries its own algorithm and an iteration count Workers accepts');
 
 assert.equal(await verifyPassword('правилна-парола-42', hash), true);
 assert.equal(await verifyPassword('грешна-парола-42', hash), false);
@@ -47,6 +50,22 @@ const legacy = await (async () => {
 })();
 assert.equal(await verifyPassword('пароланасила', legacy), true);
 t('an older iteration count still verifies (upgradeable format)');
+
+// Хеш над тавана не може да се провери. Мълчаливото „грешна парола“ тук би
+// изпратило човека да си блъска главата в правилната парола — затова е грешка,
+// която казва да мине през „Забравена парола“.
+const tooMany = `pbkdf2$sha256$210000$${'A'.repeat(22)}$${'A'.repeat(43)}`;
+await assert.rejects(
+  () => verifyPassword('правилна-парола-42', tooMany),
+  (err) => /Забравена парола/.test(err.message),
+);
+t('a hash above the runtime ceiling asks for a reset instead of lying');
+
+// Изравняването на времето при непознат имейл минава през същия таван. Като
+// литерал в login.ts то веднъж изостана и всяко влизане с непознат адрес се
+// проваляше на Workers, вместо да отговори „имейлът или паролата не съвпадат“.
+await wastePasswordTime('какво-да-е');
+t('the timing equaliser runs at the current iteration count');
 
 console.log('\nvalidation');
 assert.equal(passwordProblem('123456789'), 'Паролата трябва да е поне 10 знака.');
