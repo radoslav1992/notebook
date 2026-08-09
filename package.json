@@ -7,6 +7,7 @@
   "scripts": {
     "build": "astro build",
     "check": "astro check",
+    "console-schema": "node scripts/build-console-schema.mjs",
     "db:migrate": "wrangler d1 migrations apply zapiski --remote",
     "db:migrate:local": "wrangler d1 migrations apply zapiski --local",
     "deploy": "astro build && wrangler deploy",

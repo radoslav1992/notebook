@@ -1,5 +1,5 @@
-import { EMBED_DIMENSIONS } from './constants';
-import { Gemini, mapWithConcurrency } from './gemini';
+import { mapWithConcurrency } from './gemini';
+import { requireGoogleFeature, type Ai } from './ai';
 import { insertChunks, updateSourceStatus } from './db';
 import { newId } from './ids';
 import { extractFromDocx } from './extract/docx';
@@ -8,13 +8,13 @@ import { extractFromPlainText, extractFromUrl } from './extract/html';
 import { extractFromAudio, extractFromYouTube, isYouTubeUrl } from './extract/media';
 import type { Extraction, Source, SourceKind } from './types';
 
-export { EMBED_DIMENSIONS, MAX_UPLOAD_BYTES } from './constants';
+export { MAX_UPLOAD_BYTES } from './constants';
 
 export interface IngestContext {
   db: D1Database;
   files: R2Bucket;
   vectorize: VectorizeIndex;
-  gemini: Gemini;
+  ai: Ai;
   /** 'vectorize' = собствен RAG; 'gemini' = File Search на Google. */
   backend: 'vectorize' | 'gemini';
   /** Нужно само при backend='gemini'. */
@@ -49,6 +49,9 @@ export async function ingestSource(ctx: IngestContext, source: Source): Promise<
       sub: describeSource(source.kind, extraction, charCount),
     });
   } catch (err) {
+    // Фоновата обработка няма кой да я види, ако не се запише: в базата за
+    // потребителя, в лога за `wrangler tail`.
+    console.error('[zapiski:ingest]', source.kind, source.id, err);
     const message = err instanceof Error ? err.message : String(err);
     await updateSourceStatus(db, source.id, {
       status: 'error',
@@ -68,7 +71,7 @@ async function extract(ctx: IngestContext, source: Source): Promise<Extraction> 
     }
     case 'YT': {
       if (!source.originUrl) throw new Error('Липсва адрес на видеото.');
-      return extractFromYouTube(ctx.gemini, source.originUrl);
+      return extractFromYouTube(requireGoogleFeature(ctx.ai, 'YouTube по линк'), source.originUrl);
     }
     case 'PDF': {
       return extractFromPdf(await loadBytes(ctx, source));
@@ -78,7 +81,11 @@ async function extract(ctx: IngestContext, source: Source): Promise<Extraction> 
     }
     case 'AUD': {
       const bytes = await loadBytes(ctx, source);
-      return extractFromAudio(ctx.gemini, bytes, mimeForName(source.name));
+      return extractFromAudio(
+        requireGoogleFeature(ctx.ai, 'Разчитането на аудио файл'),
+        bytes,
+        mimeForName(source.name),
+      );
     }
     case 'TXT': {
       const bytes = await loadBytes(ctx, source);
@@ -123,10 +130,9 @@ async function indexWithVectorize(
 
   await mapWithConcurrency(batches, 2, async (start) => {
     const slice = chunkRows.slice(start, start + BATCH);
-    const vectors = await ctx.gemini.embed(
+    const vectors = await ctx.ai.embed.embed(
       slice.map((c) => `${source.name}\n\n${c.text}`),
       'RETRIEVAL_DOCUMENT',
-      EMBED_DIMENSIONS,
     );
     await ctx.vectorize.upsert(
       slice.map((c, i) => ({
@@ -155,7 +161,8 @@ async function indexWithFileSearch(
     .map((p) => `[${p.locator}]\n${p.text}`)
     .join('\n\n');
 
-  const docName = await ctx.gemini.uploadToFileSearchStore({
+  const google = requireGoogleFeature(ctx.ai, 'Индексирането през File Search');
+  const docName = await google.uploadToFileSearchStore({
     storeName: ctx.storeName!,
     bytes: new TextEncoder().encode(doc),
     mimeType: 'text/plain',

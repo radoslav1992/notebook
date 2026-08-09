@@ -1,4 +1,5 @@
-import { GeminiError, mapWithConcurrency } from './gemini';
+import { mapWithConcurrency } from './gemini';
+import { AiError } from './ai';
 import { pcmDuration, pcmToWav } from './audio/wav';
 import { createNote, saveMindmap, updateJob } from './db';
 import {
@@ -26,11 +27,11 @@ export async function generateStudioNote(
 ): Promise<Note> {
   const passages = await readAll(ctx, sources, 90_000);
   if (passages.length === 0) {
-    throw new GeminiError(400, 'Няма обработени източници, от които да направя материала.');
+    throw new AiError(400, 'Няма обработени източници, от които да направя материала.');
   }
 
   const spec = STUDIO_TASKS[task];
-  const body = await ctx.gemini.generateText({
+  const body = await ctx.ai.chat.generateText({
     prompt: `Пасажи от източниците:\n\n${buildContextBlock(passages)}\n\n---\n\n${spec.prompt}`,
     systemInstruction: studioSystem(ctx.language),
     config: { temperature: 0.4, maxOutputTokens: 8192 },
@@ -48,10 +49,10 @@ export async function generateMindmap(
 ): Promise<Mindmap> {
   const passages = await readAll(ctx, sources, 60_000);
   if (passages.length === 0) {
-    throw new GeminiError(400, 'Няма обработени източници за мисловна карта.');
+    throw new AiError(400, 'Няма обработени източници за мисловна карта.');
   }
 
-  const map = await ctx.gemini.generateJson<Mindmap>({
+  const map = await ctx.ai.chat.generateJson<Mindmap>({
     prompt: `Пасажи от източниците:\n\n${buildContextBlock(passages)}\n\n---\n\n${mindmapPrompt(ctx.language)}`,
     schema: MINDMAP_SCHEMA,
   });
@@ -102,12 +103,12 @@ export async function generateAudioOverview(
 
   const passages = await readAll(ctx, input.sources, 90_000);
   if (passages.length === 0) {
-    throw new GeminiError(400, 'Няма обработени източници за аудио преглед.');
+    throw new AiError(400, 'Няма обработени източници за аудио преглед.');
   }
 
   await updateJob(ctx.db, input.jobId, { step: 'Пиша сценария…', progress: 15 });
 
-  const script = await ctx.gemini.generateText({
+  const script = await ctx.ai.chat.generateText({
     prompt: `Пасажи от източниците:\n\n${buildContextBlock(passages)}\n\n---\n\n${podcastScriptPrompt(
       ctx.language,
       minutes,
@@ -117,7 +118,7 @@ export async function generateAudioOverview(
 
   const turns = parseTurns(script);
   if (turns.length < 4) {
-    throw new GeminiError(502, 'Сценарият излезе твърде кратък. Опитай пак.');
+    throw new AiError(502, 'Сценарият излезе твърде кратък. Опитай пак.');
   }
 
   const segments = groupTurns(turns);
@@ -137,7 +138,7 @@ export async function generateAudioOverview(
   let done = 0;
 
   const rendered = await mapWithConcurrency(segments, 2, async (segment) => {
-    const { pcm } = await ctx.gemini.speak({
+    const part = await ctx.ai.tts.speak({
       text: `${ttsInstruction()}\n\n${segment}`,
       speakers,
     });
@@ -147,14 +148,26 @@ export async function generateAudioOverview(
       step: `Озвучавам (${done} от ${segments.length})…`,
       progress: 25 + Math.round((done / segments.length) * 60),
     });
-    return pcm;
+    return part;
   });
 
-  for (const pcm of rendered) writer.push(pcm);
+  for (const part of rendered) writer.push(part.pcm);
+
+  // Честотата идва от самия модел, а не от константа: сгрешена в заглавката на
+  // WAV-а, тя пуска записа по-бързо или по-бавно, без нищо да гръмне. Различни
+  // честоти между сегментите не се смесват — това вече е чужд глас в средата.
+  const rate = rendered[0]?.sampleRate ?? SAMPLE_RATE;
+  const odd = rendered.find((p) => p.sampleRate !== rate);
+  if (odd) {
+    throw new AiError(
+      502,
+      `Моделът върна различни честоти (${rate} и ${odd.sampleRate} Hz) за един и същ подкаст.`,
+    );
+  }
 
   const pcm = writer.done();
-  const durationS = pcmDuration(pcm.length, SAMPLE_RATE);
-  const wav = pcmToWav(pcm, { sampleRate: SAMPLE_RATE });
+  const durationS = pcmDuration(pcm.length, rate);
+  const wav = pcmToWav(pcm, { sampleRate: rate });
 
   await updateJob(ctx.db, input.jobId, { step: 'Записвам файла…', progress: 92 });
 

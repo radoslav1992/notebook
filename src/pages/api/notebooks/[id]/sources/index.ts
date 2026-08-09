@@ -1,9 +1,10 @@
 import type { APIRoute } from 'astro';
+import { requireGoogleFeature } from '~/lib/ai';
 import {
   backendOf,
   background,
   env,
-  gemini,
+  ai,
   handler,
   ingestContext,
   json,
@@ -35,13 +36,16 @@ export const POST: APIRoute = handler(async (ctx) => {
   const id = ctx.params.id!;
   let notebook = await requireNotebook(ctx, id);
 
-  // Ключът се проверява преди каквито и да е записи: иначе оставаме с
-  // източник във „pending“, който никога няма да бъде обработен.
-  gemini(ctx);
+  // Моделите се сглобяват преди каквито и да е записи: липсващ ключ или
+  // липсващ binding трябва да се разбере сега, а не да остави източник във
+  // „pending“, който никога няма да бъде обработен.
+  ai(ctx);
 
   // При управляван RAG хранилището се създава при първия източник.
   if (backendOf() === 'gemini' && !notebook.storeName) {
-    const storeName = await gemini(ctx).createFileSearchStore(`zapiski-${id}`);
+    const storeName = await requireGoogleFeature(ai(ctx), 'File Search').createFileSearchStore(
+      `zapiski-${id}`,
+    );
     await updateNotebook(env.DB, ctx.locals.user.id, id, { storeName });
     notebook = { ...notebook, storeName };
   }
@@ -187,7 +191,7 @@ async function autoNameNotebook(
   if (sample.length < 100) return;
 
   try {
-    const named = await gemini(ctx).generateJson<{ title: string; emoji: string; blurb: string }>({
+    const named = await ai(ctx).chat.generateJson<{ title: string; emoji: string; blurb: string }>({
       prompt: `Източник: „${ready[0]!.name}“\n\nНачало на текста:\n${sample}\n\n---\n\n${notebookNamingPrompt(
         env.RESPONSE_LANGUAGE || 'bg',
       )}`,

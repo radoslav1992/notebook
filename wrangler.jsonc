@@ -41,8 +41,12 @@
   // ── Vectorize: chunk embeddings for retrieval ─────────────────────────────
   // Create with:
   //   wrangler vectorize create zapiski-chunks --dimensions=1536 --metric=cosine
-  //   wrangler vectorize create-metadata-index zapiski-chunks --property-name=notebookId --type=string
-  //   wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
+  //   wrangler vectorize create-metadata-index zapiski-chunks --propertyName=notebookId --type=string
+  //   wrangler vectorize create-metadata-index zapiski-chunks --propertyName=sourceId --type=string
+  // --dimensions must match EMBED_MODEL: 1536 for gemini-embedding-001, 1024
+  // for @cf/baai/bge-m3. Changing the model means a NEW index and re-indexing
+  // every source; an existing index cannot be re-sized.
+  //
   // Vectorize has NO local emulator. D1 and R2 run locally in .wrangler/state,
   // but this binding only works against the real index in your account.
   //
@@ -59,13 +63,36 @@
     }
   ],
 
+  // ── Workers AI: needed only if a model below is a Cloudflare one ─────────
+  // Nothing to create — the binding is the whole setup.
+  "ai": {
+    "binding": "AI"
+  },
+
   "vars": {
     // "vectorize" (default) = own RAG over Cloudflare Vectorize with exact page citations.
     // "gemini"              = Google's managed File Search RAG store.
     "RAG_BACKEND": "vectorize",
+
+    // ── Which models, and therefore which provider ────────────────────────
+    // The name picks the provider, because the identifiers never overlap:
+    //   no slash        → Google Generative Language API, needs GEMINI_API_KEY
+    //   "google/…"      → Workers AI partner model, billed by Cloudflare
+    //   "@cf/…"         → Cloudflare's own model
+    // See src/lib/ai/select.ts. To move everything to Cloudflare:
+    //   "CHAT_MODEL":  "google/gemini-3.6-flash",
+    //   "EMBED_MODEL": "@cf/baai/bge-m3",        // 1024 dims — needs its own index
+    //   "TTS_MODEL":   "google/gemini-3.1-flash-tts",
     "CHAT_MODEL": "gemini-2.5-flash",
+    // Offered in Settings to paid plans only. Leave out for a single model.
+    "CHAT_MODEL_PRO": "gemini-2.5-pro",
     "EMBED_MODEL": "gemini-embedding-001",
     "TTS_MODEL": "gemini-2.5-flash-preview-tts",
+
+    // Vector width. Derived from EMBED_MODEL (see ai/select.ts); set only if a
+    // model is missing from that table. Must match the Vectorize index.
+    // "EMBED_DIMENSIONS": "1024",
+
     "RESPONSE_LANGUAGE": "bg",
 
     // Адресът, на който приложението живее. Задай го след първия deploy —
@@ -77,7 +104,10 @@
   }
 
   // Secrets (set with `wrangler secret put <NAME>`), see docs/SETUP.md:
-  //   GEMINI_API_KEY          — required, https://aistudio.google.com/apikey
+  //   GEMINI_API_KEY          — https://aistudio.google.com/apikey; required
+  //                             unless every model above is a Cloudflare one,
+  //                             and even then YouTube, uploaded audio and
+  //                             File Search still need it. See docs/models.md.
   //   SESSION_SECRET          — required, openssl rand -hex 32
   //   GOOGLE_CLIENT_ID        — optional, sign-in with Google
   //   GOOGLE_CLIENT_SECRET    — optional, same

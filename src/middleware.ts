@@ -1,14 +1,14 @@
 import { env } from 'cloudflare:workers';
 import { defineMiddleware } from 'astro:middleware';
-import { peekSession, resolveSession } from './lib/auth';
+import { peekSession } from './lib/auth';
 import type { User } from './lib/types';
 
 /**
- * Пътища, на които трябва да има ред в базата: тук се създава съдържание, а то
- * трябва да е собственост на някого. Тези пътища правят анонимен профил, ако
- * няма сесия — така приложението се пробва без регистрация.
+ * Пътища, които искат истински профил: тук се създава съдържание и се харчи
+ * Gemini квота, затова трябва да има кой да отговаря за тях. Без сесия
+ * страниците пренасочват към входа, а API-тата отговарят с 401.
  */
-const CREATES_GUEST = /^\/(app(\/|$)|api\/(notebooks|settings|me)(\/|$))/;
+const REQUIRES_AUTH = /^\/(app(\/|$)|api\/(notebooks|settings|me)(\/|$))/;
 
 /**
  * Пътища, които само гледат кой е влязъл: вход, регистрация, плащане.
@@ -22,6 +22,26 @@ const PEEKS_ONLY = /^\/(login|register|forgot|reset|verify|api\/(auth|billing)(\
  * Ако минеше през сесията, всяко събитие щеше да прави нов профил.
  */
 const NO_SESSION = /^\/api\/billing\/webhook$/;
+
+export type RouteKind =
+  /** Иска истински профил. */
+  | 'guarded'
+  /** Гледа кой е влязъл, но не изисква профил. */
+  | 'peek'
+  /** Не пипа сесията: лендинг, цени, статични файлове, Stripe webhook. */
+  | 'open';
+
+/**
+ * Кое правило важи за даден път. Отделено от middleware-а, защото тези три
+ * израза са границата на достъпа — сгрешен израз или отваря /app за всички, или
+ * заключва webhook-а на Stripe, а и двете мълчат, докато не стане късно.
+ */
+export function classifyRoute(pathname: string): RouteKind {
+  if (NO_SESSION.test(pathname)) return 'open';
+  if (REQUIRES_AUTH.test(pathname)) return 'guarded';
+  if (PEEKS_ONLY.test(pathname)) return 'peek';
+  return 'open';
+}
 
 /** Как изглежда „никой не е влязъл“, без да пишем в базата. */
 const NOBODY: User = {
@@ -38,12 +58,9 @@ const NOBODY: User = {
 export const onRequest = defineMiddleware(async (context, next) => {
   const { pathname } = context.url;
 
-  const creates = CREATES_GUEST.test(pathname);
-  const peeks = !creates && PEEKS_ONLY.test(pathname);
-
-  if (NO_SESSION.test(pathname) || (!creates && !peeks)) {
-    return next();
-  }
+  const kind = classifyRoute(pathname);
+  if (kind === 'open') return next();
+  const guarded = kind === 'guarded';
 
   if (!env?.DB) {
     return new Response(
@@ -60,15 +77,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
     );
   }
 
-  let setCookie: string | undefined;
+  const session = await peekSession(context.request, env.DB, secret);
 
-  if (peeks) {
-    context.locals.user = (await peekSession(context.request, env.DB, secret)) ?? NOBODY;
-  } else {
-    const resolved = await resolveSession(context.request, env.DB, secret);
-    context.locals.user = resolved.user;
-    setCookie = resolved.setCookie;
+  // Профилите на гости от по-ранна версия още имат валидни сесии. Те минават
+  // през входа като всички останали, а тетрадките им се прибират при влизане
+  // или при регистрация (`claimAnonymous` / `upgradeAnonymous`).
+  if (guarded && (!session || session.isAnonymous)) {
+    return refuse(context.url, pathname.startsWith('/api/'));
   }
+
+  context.locals.user = session ?? NOBODY;
 
   // Собствен ключ от браузъра („Съхранява се локално на устройството ти“).
   const byok = context.request.headers.get('x-gemini-key');
@@ -76,20 +94,31 @@ export const onRequest = defineMiddleware(async (context, next) => {
     context.locals.userGeminiKey = byok;
   }
 
-  const response = await next();
-
-  // Ако маршрутът вече е издал сесия (вход, регистрация, нова парола), неговата
-  // бисквитка печели — нашата би я презаписала, защото се добавя след нея.
-  if (setCookie && !setsSessionCookie(response)) {
-    response.headers.append('set-cookie', setCookie);
-  }
-  return response;
+  return next();
 });
 
-function setsSessionCookie(response: Response): boolean {
-  const all =
-    typeof response.headers.getSetCookie === 'function'
-      ? response.headers.getSetCookie()
-      : [response.headers.get('set-cookie') ?? ''];
-  return all.some((value) => value.startsWith('zapiski_sid='));
+/**
+ * Няма профил. Страниците отиват на входа и се връщат на същото място след
+ * това; API-тата отговарят с 401 и с `signedOut`, по което браузърът различава
+ * „изтекла сесия“ от другите 401-ици — отказан Gemini ключ например също е 401,
+ * а той не трябва да изхвърля никого към входа.
+ */
+function refuse(url: URL, isApi: boolean): Response {
+  if (isApi) {
+    return new Response(
+      JSON.stringify({ error: 'Влез в профила си, за да продължиш.', signedOut: true }),
+      {
+        status: 401,
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      },
+    );
+  }
+  const next = `${url.pathname}${url.search}`;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: `/login?next=${encodeURIComponent(next)}`,
+      'cache-control': 'no-store',
+    },
+  });
 }

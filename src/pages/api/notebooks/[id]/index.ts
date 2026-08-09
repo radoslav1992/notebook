@@ -1,10 +1,11 @@
 import type { APIRoute } from 'astro';
+import { requireGoogleFeature } from '~/lib/ai';
 import {
   backendOf,
   bestEffort,
   dropVectors,
   env,
-  gemini,
+  ai,
   handler,
   json,
   readJson,
@@ -87,7 +88,7 @@ export const DELETE: APIRoute = handler(async (ctx) => {
   });
   if (notebook.storeName && backendOf() === 'gemini') {
     await bestEffort('file search store', () =>
-      gemini(ctx).deleteFileSearchStore(notebook.storeName!),
+      requireGoogleFeature(ai(ctx), 'File Search').deleteFileSearchStore(notebook.storeName!),
     );
   }
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-const { Gemini } = await import('../src/lib/gemini.ts');
+const { buildAi } = await import('../src/lib/ai/index.ts');
 const { retrieve, answerStream, buildContextBlock } = await import('../src/lib/rag.ts');
 
 const HOST = 'http://127.0.0.1:8788';
@@ -58,7 +58,13 @@ const sources = [src('s1', 1, 'Зелена сделка.pdf'), src('s2', 4, 'Л
 
 const ctx = {
   db, vectorize,
-  gemini: new Gemini({ apiKey: 'test-key', host: HOST }),
+  ai: buildAi({
+    chatModel: 'gemini-2.5-flash',
+    embedModel: 'gemini-embedding-001',
+    ttsModel: 'gemini-2.5-flash-preview-tts',
+    googleKey: 'test-key',
+    googleHost: HOST,
+  }),
   backend: 'vectorize',
   storeName: null,
   language: 'bg',

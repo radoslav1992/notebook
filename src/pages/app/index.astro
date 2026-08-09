@@ -24,7 +24,6 @@ const claimed = Number(Astro.url.searchParams.get('claimed') ?? '0') || 0;
   <HomeView
     notebooks={notebooks}
     displayName={user.displayName}
-    isGuest={user.isAnonymous}
     maxNotebooks={Number.isFinite(max) ? max : null}
     claimed={claimed}
     client:load

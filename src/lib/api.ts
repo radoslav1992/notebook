@@ -1,6 +1,6 @@
 import { env, waitUntil } from 'cloudflare:workers';
 import type { APIContext } from 'astro';
-import { Gemini, GeminiError } from './gemini';
+import { AiError, buildAi, defaultChatModel, resolveChatModel, type Ai } from './ai';
 import { HttpError, getNotebook, getSettings, listSources } from './db';
 import { getEntitlement } from './limits';
 import type { RagContext } from './rag';
@@ -34,13 +34,13 @@ export function handler(
       return await fn(ctx);
     } catch (err) {
       if (err instanceof HttpError) return fail(err.status, err.message);
-      if (err instanceof GeminiError) {
-        if (err.status === 401 || err.status === 403) {
-          return fail(401, 'Gemini API ключът липсва или е отказан. Провери го в Настройки.');
-        }
-        if (err.status === 429) {
-          return fail(429, 'Достигнат е лимитът на Gemini API. Опитай пак след малко.');
-        }
+      if (err instanceof AiError) {
+        // Съобщението е преведено още при доставчика и казва какво да се
+        // направи. Тук се избира само статусът, по който интерфейсът различава
+        // случаите.
+        console.error('[zapiski:ai]', err.status, err.message, err.detail);
+        if (err.keyProblem) return fail(401, err.message);
+        if (err.status === 429) return fail(429, err.message);
         return fail(502, err.message);
       }
       console.error('[zapiski]', err);
@@ -64,20 +64,23 @@ export function background(promise: Promise<unknown>): void {
   }
 }
 
-export function gemini(ctx: APIContext, model?: string): Gemini {
-  const apiKey = ctx.locals.userGeminiKey || env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new HttpError(
-      401,
-      'Няма Gemini API ключ. Задай GEMINI_API_KEY на сървъра или свой ключ в Настройки.',
-    );
-  }
-  return new Gemini({
-    apiKey,
-    chatModel: model || env.CHAT_MODEL,
-    embedModel: env.EMBED_MODEL,
-    ttsModel: env.TTS_MODEL,
-    host: env.GEMINI_BASE_URL,
+/**
+ * Трите роли (чат, вграждания, реч), всяка при доставчика, който името на
+ * модела посочва. Хвърля, ако избраният модел иска ключ или binding, който го
+ * няма — по-добре тук, отколкото след като източникът е записан в базата.
+ */
+export function ai(ctx: APIContext, model?: string): Ai {
+  // trim: ключ, поставен в Cloudflare или в Настройки, често носи нов ред или
+  // празно място накрая, а Google отговаря на това с „API key not valid“.
+  const googleKey = (ctx.locals.userGeminiKey || env.GEMINI_API_KEY || '').trim();
+  return buildAi({
+    chatModel: model || defaultChatModel({ chatModel: env.CHAT_MODEL }),
+    embedModel: env.EMBED_MODEL || 'gemini-embedding-001',
+    ttsModel: env.TTS_MODEL || 'gemini-2.5-flash-preview-tts',
+    embedDimensions: env.EMBED_DIMENSIONS,
+    googleKey: googleKey || undefined,
+    googleHost: env.GEMINI_BASE_URL,
+    ai: env.AI,
   });
 }
 
@@ -121,15 +124,18 @@ export async function ragContext(
     getSettings(env.DB, ctx.locals.user.id),
     getEntitlement(env.DB, ctx.locals.user.id),
   ]);
-  // Pro моделът е за платените планове; иначе тихо падаме на Flash.
-  let chosen = model ?? settings.chatModel;
-  if (!entitlement.plan.limits.proModel && chosen.includes('pro')) {
-    chosen = 'gemini-2.5-flash';
-  }
+  // Pro моделът е за платените планове; иначе тихо падаме на модела по
+  // подразбиране на инсталацията — какъвто и да е той, за да не върнем
+  // безплатния план към Google, когато проектът е минал на Cloudflare.
+  const chosen = resolveChatModel(
+    { chatModel: env.CHAT_MODEL, chatModelPro: env.CHAT_MODEL_PRO },
+    model ?? settings.chatModel,
+    entitlement.plan.limits.proModel,
+  );
   return {
     db: env.DB,
     vectorize: env.VECTORIZE,
-    gemini: gemini(ctx, chosen),
+    ai: ai(ctx, chosen),
     backend: backendOf(),
     storeName: notebook.storeName,
     language: settings.responseLanguage || env.RESPONSE_LANGUAGE || 'bg',
@@ -141,7 +147,7 @@ export function ingestContext(ctx: APIContext, notebook: Notebook): IngestContex
     db: env.DB,
     files: env.FILES,
     vectorize: env.VECTORIZE,
-    gemini: gemini(ctx),
+    ai: ai(ctx),
     backend: backendOf(),
     storeName: notebook.storeName,
   };

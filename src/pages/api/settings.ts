@@ -2,11 +2,18 @@ import type { APIRoute } from 'astro';
 import { env, handler, json, readJson } from '~/lib/api';
 import { getSettings, saveProfile, saveSettings } from '~/lib/db';
 import { initialsOf } from '~/lib/auth';
+import { modelChoices } from '~/lib/ai/choices';
 
 export const prerender = false;
 
-const ALLOWED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
 const ALLOWED_LANGUAGES = ['bg', 'en', 'de', 'ru'];
+
+/** Моделите на тази инсталация — единственото, което може да се запише. */
+function allowedModels(): string[] {
+  return modelChoices({ chatModel: env.CHAT_MODEL, chatModelPro: env.CHAT_MODEL_PRO }).map(
+    (m) => m.value,
+  );
+}
 
 export const GET: APIRoute = handler(async (ctx) => {
   const settings = await getSettings(env.DB, ctx.locals.user.id);
@@ -16,6 +23,7 @@ export const GET: APIRoute = handler(async (ctx) => {
     /** Дали сървърът има свой ключ — от това зависи нужен ли е ключ от браузъра. */
     hasServerKey: Boolean(env.GEMINI_API_KEY),
     ragBackend: env.RAG_BACKEND === 'gemini' ? 'gemini' : 'vectorize',
+    models: modelChoices({ chatModel: env.CHAT_MODEL, chatModelPro: env.CHAT_MODEL_PRO }),
   });
 });
 
@@ -32,7 +40,7 @@ export const PATCH: APIRoute = handler(async (ctx) => {
     patch.responseLanguage = body.responseLanguage;
   }
   if (typeof body.offlineMode === 'boolean') patch.offlineMode = body.offlineMode;
-  if (body.chatModel && ALLOWED_MODELS.includes(body.chatModel)) patch.chatModel = body.chatModel;
+  if (body.chatModel && allowedModels().includes(body.chatModel)) patch.chatModel = body.chatModel;
   await saveSettings(env.DB, ctx.locals.user.id, patch);
 
   let user = ctx.locals.user;

@@ -2,6 +2,9 @@
 
 Всичко, което трябва да предоставиш, и точните команди за него.
 
+> Ако предпочиташ без терминал — само през dashboard-а на Cloudflare и GitHub —
+> виж [`deploy-console.md`](deploy-console.md).
+
 **Съдържание**
 
 1. [Какво ти трябва — кратък списък](#1-какво-ти-трябва)
@@ -22,7 +25,7 @@
 
 | # | Ресурс | За какво | Нужен ли е, за да пуснеш? |
 | --- | --- | --- | --- |
-| 1 | **Gemini API ключ** | отговори, вграждания, подкаст | **Да** |
+| 1 | **Gemini API ключ** | отговори, вграждания, подкаст | **Да**, освен ако всички модели са на Cloudflare — виж [models.md](models.md) |
 | 2 | **Cloudflare акаунт, Workers Paid** (5 $/мес.) | приложението | **Да** |
 | 3 | **D1 база** | тетрадки, източници, разговори | **Да** — но се създава сама при deploy |
 | 4 | **R2 кофа** | файловете и аудио прегледите | **Да** — също се създава сама |
@@ -120,15 +123,21 @@ npx wrangler r2 bucket create zapiski-files
 
 ### Vectorize — търсенето
 
-`gemini-embedding-001` се свива до 1536 измерения, защото това е таванът на
-Vectorize. Двата индекса по метаданни правят филтрирането по тетрадка и по
-избрани източници бързо:
+Ширината на индекса трябва да съвпада с `EMBED_MODEL`. По подразбиране моделът е
+`gemini-embedding-001`: връща 3072 числа, но е трениран да се съкращава без
+съществена загуба (Matryoshka), затова приложението иска **1536** и нормализира
+наново. При `@cf/baai/bge-m3` числото е **1024** — виж [models.md](models.md).
+Ширината се извежда от модела в `src/lib/ai/select.ts`. Двата индекса по
+метаданни правят филтрирането по тетрадка и по избрани източници бързо:
 
 ```bash
 npx wrangler vectorize create zapiski-chunks --dimensions=1536 --metric=cosine
-npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=notebookId --type=string
-npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
+npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=notebookId --type=string
+npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=sourceId --type=string
 ```
+
+Индексите по метаданни се правят **преди** първия качен източник: Vectorize
+индексира по метаданни само вектори, добавени след тяхното създаване.
 
 > **Vectorize няма локален емулатор.** D1 и R2 се въртят локално в
 > `.wrangler/state`, но този binding работи само срещу истинския индекс.
@@ -321,8 +330,10 @@ STRIPE_TRIAL_DAYS = "14"
 | `PUBLIC_SITE_URL` | адресът на заявката | Базата за връзките в писмата и за OAuth. **Задай го в production**, иначе писмата могат да сочат към грешен адрес. |
 | `EMAIL_FROM` | `onboarding@resend.dev` | Подател на писмата. |
 | `RAG_BACKEND` | `vectorize` | `vectorize` = собствен индекс; `gemini` = Google File Search. |
-| `CHAT_MODEL` | `gemini-2.5-flash` | Модел за отговорите. |
+| `CHAT_MODEL` | `gemini-2.5-flash` | Модел за отговорите. Името избира и доставчика — виж [models.md](models.md). |
+| `CHAT_MODEL_PRO` | `gemini-2.5-pro` | По-добрият модел, който платените планове може да изберат в Настройки. |
 | `EMBED_MODEL` | `gemini-embedding-001` | Вграждания; смяната иска нов Vectorize индекс. |
+| `EMBED_DIMENSIONS` | по модела | Ширина на вектора, ако моделът не е в таблицата в `ai/select.ts`. |
 | `TTS_MODEL` | `gemini-2.5-flash-preview-tts` | Подкастът; трябва да поддържа multi-speaker. |
 | `RESPONSE_LANGUAGE` | `bg` | Език по подразбиране за новите профили. |
 | `STRIPE_TRIAL_DAYS` | няма | Дни безплатен пробен период. |
@@ -357,8 +368,8 @@ Cloudflare следи хранилището и пуска ново при вс�
    ```bash
    npx wrangler login
    npx wrangler vectorize create zapiski-chunks --dimensions=1536 --metric=cosine
-   npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=notebookId --type=string
-   npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
+   npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=notebookId --type=string
+   npx wrangler vectorize create-metadata-index zapiski-chunks --propertyName=sourceId --type=string
    npm run db:migrate
    ```
 
@@ -397,20 +408,23 @@ npm run deploy              # build + wrangler deploy
 | # | Какво | Очаквано |
 | --- | --- | --- |
 | 1 | Отвори `/` | Лендингът се зарежда |
-| 2 | Отвори `/app` | „Здравей“ + лента „Работиш като гост“ |
-| 3 | „+ Нова тетрадка“, качи PDF | Източникът минава през „чета и индексирам…“ до брой страници |
-| 4 | Задай въпрос | Отговор с чипове „1 · име, стр. N“; клик показва пасажа |
-| 5 | Направи 4-та тетрадка | Отказ с „Безплатният план стига до 3 тетрадки“ |
-| 6 | „Направи профил“ | Тетрадките остават; ако Resend е настроен — идва писмо |
-| 7 | Отвори `/login` в друг браузър и влез | Тетрадките са там |
+| 2 | Отвори `/app` без профил | Пренасочва към `/login?next=%2Fapp` |
+| 3 | Направи профил | Влиза направо в `/app`; ако Resend е настроен — идва писмо |
+| 4 | „+ Нова тетрадка“, качи PDF | Източникът минава през „чета и индексирам…“ до брой страници |
+| 5 | Задай въпрос | Отговор с чипове „1 · име, стр. N“; клик показва пасажа |
+| 6 | Направи 4-та тетрадка | Отказ с „Безплатният план стига до 3 тетрадки“ |
+| 7 | Излез и влез пак | Тетрадките са там |
 | 8 | „Продължи с Google“ | Влиза и свързва същия имейл |
 | 9 | Студио → „Създай аудио преглед“ | Напредък, после плейър, който върти |
 | 10 | `/pricing` → „Вземи Плюс“ | Stripe Checkout; с тестова карта `4242 4242 4242 4242` |
 | 11 | Настройки | „Плюс“, тавани 25 тетрадки, брояч за месеца |
 | 12 | Настройки → „Плащане и фактури“ | Порталът на Stripe се отваря |
 
-Ако нещо от 1–5 не мине, проблемът е в Cloudflare или Gemini. 6–8 е Google или
+Ако нещо от 1–6 не мине, проблемът е в Cloudflare или Gemini. 7–8 е Google или
 Resend. 10–12 е Stripe.
+
+Стъпка 5 е същинската проверка: чипове с препратки значат, че D1, R2, Vectorize
+и Gemini работят заедно.
 
 ---
 

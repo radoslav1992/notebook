@@ -7,6 +7,7 @@ import {
   normalizeEmail,
   startSession,
   verifyPassword,
+  wastePasswordTime,
 } from '~/lib/auth';
 import { attemptKey, rateLimit, sessionSecret } from '~/lib/authApi';
 import { HttpError } from '~/lib/db';
@@ -29,7 +30,7 @@ export const POST: APIRoute = handler(async (ctx) => {
   const wrong = new HttpError(401, 'Имейлът или паролата не съвпадат.');
   if (!user || !hash) {
     // Изразходваме сравнимо време, за да не се различават двата случая.
-    await verifyPassword(password, 'pbkdf2$sha256$210000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    await wastePasswordTime(password);
     throw wrong;
   }
   if (!(await verifyPassword(password, hash))) throw wrong;
