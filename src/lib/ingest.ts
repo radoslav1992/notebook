@@ -1,5 +1,6 @@
 import { mapWithConcurrency } from './gemini';
 import { requireGoogleFeature, type Ai } from './ai';
+import { vectorError } from './vector';
 import { insertChunks, updateSourceStatus } from './db';
 import { newId } from './ids';
 import { extractFromDocx } from './extract/docx';
@@ -134,17 +135,23 @@ async function indexWithVectorize(
       slice.map((c) => `${source.name}\n\n${c.text}`),
       'RETRIEVAL_DOCUMENT',
     );
-    await ctx.vectorize.upsert(
-      slice.map((c, i) => ({
-        id: c.id,
-        values: vectors[i]!,
-        metadata: {
-          notebookId: c.notebook_id,
-          sourceId: c.source_id,
-          ordinal: c.ordinal,
-        },
-      })),
-    );
+    try {
+      await ctx.vectorize.upsert(
+        slice.map((c, i) => ({
+          id: c.id,
+          values: vectors[i]!,
+          metadata: {
+            notebookId: c.notebook_id,
+            sourceId: c.source_id,
+            ordinal: c.ordinal,
+          },
+        })),
+      );
+    } catch (err) {
+      // Съобщението стига до потребителя под източника, затова трябва да казва
+      // какво да се направи, а не само че Vectorize е отказал.
+      throw vectorError(err, ctx.ai.embed.dimensions);
+    }
   });
 }
 

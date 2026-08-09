@@ -10,6 +10,8 @@ const { CloudflareAi } = await import('../src/lib/ai/cloudflare.ts');
 const { buildAi } = await import('../src/lib/ai/index.ts');
 const { googleTts } = await import('../src/lib/ai/google.ts');
 const { AiError } = await import('../src/lib/ai/error.ts');
+const { vectorError, isDimensionMismatch } = await import('../src/lib/vector.ts');
+const { FALLBACK_EMBED_MODEL, FALLBACK_TTS_MODEL } = await import('../src/lib/ai/defaults.ts');
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -400,6 +402,41 @@ t('the built-in default is a model new keys can still use', () => {
   assert.equal(modelChoices({}).length, 1);
   assert.equal(modelChoices({})[0].value, FALLBACK_CHAT_MODEL);
   assert.equal(resolveChatModel({}, 'gemini-2.5-flash', true), FALLBACK_CHAT_MODEL);
+});
+
+t('with no variables set at all, the defaults still make a working setup', () => {
+  // wrangler.jsonc нарочно не задава vars — иначе deploy заменя стойностите от
+  // dashboard-а. Значи стойностите по подразбиране в кода са единственото, което
+  // държи свеж клон да работи.
+  const ai = buildAi({
+    chatModel: FALLBACK_CHAT_MODEL,
+    embedModel: FALLBACK_EMBED_MODEL,
+    ttsModel: FALLBACK_TTS_MODEL,
+    googleKey: 'k',
+  });
+  assert.equal(ai.chat.model, FALLBACK_CHAT_MODEL);
+  assert.equal(ai.embed.dimensions, 1536, 'трябва да съвпада с индекса от SETUP.md');
+  assert.ok(ai.google, 'нито един по подразбиране не иска Workers AI binding');
+});
+
+console.log('\nembedding width vs the index');
+
+t('a dimension mismatch says what to do, not just that Vectorize refused', () => {
+  // Смяна на EMBED_MODEL от dashboard-а изглежда безобидна и чупи търсенето:
+  // индекс не се преоразмерява.
+  const raw = new Error('Vector dimension mismatch: expected 1536, got 1024');
+  assert.equal(isDimensionMismatch(raw), true);
+  const out = vectorError(raw, 1024).message;
+  assert.match(out, /1024 измерения/);
+  assert.match(out, /EMBED_MODEL/);
+  assert.match(out, /нов индекс/);
+  assert.match(out, /expected 1536/, 'оригиналът остава за диагностика');
+});
+
+t('other Vectorize failures are passed through unchanged', () => {
+  const other = new Error('Metadata index not found for property notebookId');
+  assert.equal(isDimensionMismatch(other), false);
+  assert.equal(vectorError(other, 1536), other, 'същият обект, не пренаписан');
 });
 
 t('labels say the model and where it runs', () => {

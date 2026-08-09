@@ -1,6 +1,7 @@
 import { Gemini, groundingChunksOf, textOf } from './gemini';
 import { getChunksByIds, getChunksForSources } from './db';
 import { requireGoogleFeature, type Ai } from './ai';
+import { isDimensionMismatch, vectorError } from './vector';
 import { answerSystem } from './prompts';
 import type { Citation, Source } from './types';
 
@@ -57,7 +58,10 @@ export async function retrieve(
       returnMetadata: 'none',
     });
     matches = res.matches.map((m) => ({ id: m.id, score: m.score }));
-  } catch {
+  } catch (err) {
+    // Сгрешена ширина не е проблем на филтъра: вторият опит ще падне по същия
+    // начин, а после отговорът излиза „в източниците няма нищо“, което е лъжа.
+    if (isDimensionMismatch(err)) throw vectorError(err, ctx.ai.embed.dimensions);
     // Ако филтърът не мине (липсващ индекс по метаданни), търсим широко и
     // отсяваме след това.
     const res = await ctx.vectorize.query(vector, { topK: OVERFETCH * 2, returnMetadata: 'none' });

@@ -17,18 +17,38 @@
 
 ---
 
-## Внимание: dashboard-ът НЕ е мястото
+## Моделите се сменят от dashboard-а
 
-Стойност, въведена в **Settings → Variables and Secrets** като обикновена
-променлива, се **заменя при следващия deploy**. `wrangler deploy` прилага блока
-`vars` от `wrangler.jsonc` върху worker-а, тоест каквото пише в хранилището
-печели, а редакцията от dashboard-а изчезва тихо.
+**Settings → Variables and Secrets** на worker-а е мястото. Смяната е стойност и
+**Deploy**, без commit и без чакане на build.
 
-Затова моделите се сменят в `wrangler.jsonc` и се commit-ват — Cloudflare сам
-пуска нов deploy. Ако много държиш да е от dashboard-а, добави го като **Secret**
-вместо като Variable: тайните не се заместват.
+Работи, защото `wrangler.jsonc` нарочно **не задава никакви `vars`**. Всеки
+`wrangler deploy` заменя обикновените променливи на worker-а с блока `vars` от
+конфигурацията — тоест докато там имаше стойности, всяка редакция от dashboard-а
+се връщаше тихо при следващия push. Блокът го няма, значи няма кой да я върне.
 
-Същото важи за `PUBLIC_SITE_URL` и за всяка друга променлива от `vars`.
+Затова пък всяка променлива има стойност по подразбиране в кода и свеж клон
+работи, без да е зададена нито една:
+
+| Променлива | По подразбиране | Къде |
+| --- | --- | --- |
+| `CHAT_MODEL` | `gemini-3.6-flash` | `src/lib/ai/defaults.ts` |
+| `CHAT_MODEL_PRO` | няма — платените ползват `CHAT_MODEL` | |
+| `EMBED_MODEL` | `gemini-embedding-001` | `src/lib/ai/defaults.ts` |
+| `TTS_MODEL` | `gemini-2.5-flash-preview-tts` | `src/lib/ai/defaults.ts` |
+| `EMBED_DIMENSIONS` | по модела | `src/lib/ai/select.ts` |
+| `RAG_BACKEND` | `vectorize` | `src/lib/api.ts` |
+| `RESPONSE_LANGUAGE` | `bg` | `src/lib/api.ts` |
+| `EMAIL_FROM` | `Записки <onboarding@resend.dev>` | `src/lib/email.ts` |
+| `PUBLIC_SITE_URL` | адресът на самата заявка | `src/lib/authApi.ts` |
+
+Смяната на модел за чата или за речта е безопасна: сгрешено име се отказва с
+преведена грешка, а при TTS грешката изброява какво приема ключът.
+
+> **`EMBED_MODEL` е изключението.** Ширината му трябва да съвпада с Vectorize
+> индекса, а индекс не се преоразмерява. Смяна от dashboard-а изглежда
+> безобидна и спира търсенето. Затова заявката се проваля с изречение, което
+> казва точно това — виж „Смяна на модела за вграждане“ по-долу.
 
 ## Кои модели приема ключът
 

@@ -101,7 +101,8 @@ Portal, вместо да пишем свои екрани.
 
 ## Двата режима на търсене
 
-`RAG_BACKEND` в `wrangler.jsonc` избира кой да върши работата:
+Променливата `RAG_BACKEND` (в Cloudflare, при останалите) избира кой да върши
+работата:
 
 | | `vectorize` (по подразбиране) | `gemini` |
 | --- | --- | --- |
@@ -124,10 +125,16 @@ Portal, вместо да пишем свои екрани.
 избира и доставчика**: без наклонена черта значи Google API с `GEMINI_API_KEY`,
 с наклонена черта значи Cloudflare Workers AI без ключ от Google.
 
-```jsonc
-"CHAT_MODEL":  "google/gemini-3.6-flash",       // Cloudflare, партньорски Gemini
-"EMBED_MODEL": "@cf/baai/bge-m3",               // Cloudflare, 1024 измерения
-"TTS_MODEL":   "google/gemini-3.1-flash-tts"    // Cloudflare, двама водещи
+Задават се като променливи на worker-а в **Cloudflare → Settings → Variables and
+Secrets**, не в хранилището: `wrangler.jsonc` нарочно не съдържа `vars`, защото
+блокът заменя стойностите от dashboard-а при всеки deploy. Стойностите по
+подразбиране живеят в `src/lib/ai/defaults.ts`, така че свеж клон работи и без
+нито една зададена.
+
+```
+CHAT_MODEL   = google/gemini-3.6-flash     # Cloudflare, партньорски Gemini
+EMBED_MODEL  = @cf/baai/bge-m3             # Cloudflare, 1024 измерения
+TTS_MODEL    = google/gemini-3.1-flash-tts # Cloudflare, двама водещи
 ```
 
 Три неща остават само при Google: YouTube по линк, разчитане на качен аудио файл
