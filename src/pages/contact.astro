@@ -1,0 +1,77 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import ContactForm from '../components/ContactForm';
+import { peekSession } from '../lib/auth';
+import { sessionSecret } from '../lib/authApi';
+import { DEFAULT_CONTACT_EMAIL, bareAddress } from '../lib/email';
+import '../styles/auth.css';
+
+export const prerender = false;
+
+// Публична страница: четем сесията, ако има, за да попълним имейла, но не
+// създаваме профил за всеки минаващ.
+const user = await peekSession(Astro.request, env.DB, sessionSecret());
+const signedIn = Boolean(user && !user.isAnonymous);
+const contact = bareAddress(env.CONTACT_EMAIL || DEFAULT_CONTACT_EMAIL);
+---
+
+<Base title="Контакт — Записки" description="Пиши ни: въпрос, проблем или предложение.">
+  <div class="topline">
+    <a class="auth-brand" href="/" style="margin:0">
+      <span class="mark">З</span>
+      <span class="name">Записки</span>
+    </a>
+    <div style="flex:1"></div>
+    {
+      signedIn ? (
+        <a class="btn btn-quiet" href="/app">Тетрадките ми</a>
+      ) : (
+        <a class="btn btn-quiet" href="/login">Влез</a>
+      )
+    }
+  </div>
+
+  <div class="contact-page">
+    <div class="pricing-head">
+      <h1>Пиши ни</h1>
+      <p>
+        Въпрос, счупено нещо или предложение — всичко е добре дошло. Отговаряме на адреса, който
+        оставиш.
+      </p>
+    </div>
+
+    <div class="auth-card" style="max-width:560px;margin:0 auto">
+      <ContactForm
+        contactEmail={contact}
+        knownEmail={signedIn ? user?.email : null}
+        knownName={signedIn ? user?.displayName : null}
+        client:load
+      />
+    </div>
+  </div>
+</Base>
+
+<style>
+  .topline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 22px 26px 0;
+  }
+  .contact-page {
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 46px 26px 90px;
+  }
+  @media (max-width: 640px) {
+    .topline {
+      padding: 16px 18px 0;
+    }
+    .contact-page {
+      padding: 28px 18px 60px;
+    }
+  }
+</style>

@@ -73,7 +73,17 @@
   // Nothing to create — the binding is the whole setup.
   "ai": {
     "binding": "AI"
-  }
+  },
+
+  // ── Cloudflare Email Service: verification, password reset, contact form ──
+  // Onboard zapiski.bg as a sending domain first (Email Service → Domains).
+  // Until then this can only reach addresses verified in Email Routing, which
+  // is enough for the contact form but not for real users. See docs/email.md.
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ]
 
   // ── Variables live in the DASHBOARD, not here ────────────────────────────
   //
@@ -92,7 +102,9 @@
   //   EMBED_DIMENSIONS  derived from EMBED_MODEL      src/lib/ai/select.ts
   //   RAG_BACKEND       vectorize                     src/lib/api.ts
   //   RESPONSE_LANGUAGE bg                            src/lib/api.ts
-  //   EMAIL_FROM        Записки <onboarding@resend.dev>  src/lib/email.ts
+  //   EMAIL_FROM        Записки <noreply@zapiski.bg>  src/lib/email.ts
+  //   CONTACT_EMAIL     info@zapiski.bg               src/lib/email.ts
+  //   CONTACT_TO        dev.radoslav.dodnikov@gmail.com  src/lib/email.ts
   //   PUBLIC_SITE_URL   the request's own host        src/lib/authApi.ts
   //
   // A model name also picks its provider: no slash → Google API with
