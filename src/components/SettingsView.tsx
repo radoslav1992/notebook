@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { ApiError, apiSend, getLocalKey, maskKey, setLocalKey } from '~/lib/client';
+import type { ModelChoice } from '~/lib/ai/choices';
 import type { Settings, User } from '~/lib/types';
 
 interface Props {
@@ -9,6 +10,11 @@ interface Props {
   ragBackend: 'vectorize' | 'gemini';
   /** Дали планът дава достъп до по-скъпия модел. */
   proModel: boolean;
+  /**
+   * Моделите, които тази инсталация предлага. Идват от конфигурацията, защото
+   * при доставчик Cloudflare имената са съвсем други.
+   */
+  models: ModelChoice[];
 }
 
 const LANGUAGES: { value: string; label: string }[] = [
@@ -18,18 +24,13 @@ const LANGUAGES: { value: string; label: string }[] = [
   { value: 'ru', label: 'Руски' },
 ];
 
-const MODELS: { value: string; label: string; pro?: boolean }[] = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — бърз' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — по-точен', pro: true },
-  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite — най-евтин' },
-];
-
 export default function SettingsView({
   settings: initial,
   user: initialUser,
   hasServerKey,
   ragBackend,
   proModel,
+  models,
 }: Props) {
   const [settings, setSettings] = useState(initial);
   const [user, setUser] = useState(initialUser);
@@ -140,10 +141,10 @@ export default function SettingsView({
           </div>
           <select
             class="select"
-            value={settings.chatModel}
+            value={settings.chatModel || models[0]?.value}
             onChange={(e) => void patch({ chatModel: (e.target as HTMLSelectElement).value })}
           >
-            {MODELS.map((m) => (
+            {models.map((m) => (
               <option key={m.value} value={m.value} disabled={m.pro && !proModel}>
                 {m.label}
                 {m.pro && !proModel ? ' (Плюс)' : ''}

@@ -6,6 +6,7 @@ import AccountPanel from '../../components/AccountPanel';
 import SettingsView from '../../components/SettingsView';
 import { getSettings } from '../../lib/db';
 import { getEntitlement, getUsage } from '../../lib/limits';
+import { modelChoices } from '../../lib/ai/choices';
 import '../../styles/app.css';
 import '../../styles/auth.css';
 
@@ -67,6 +68,7 @@ const checkout = Astro.url.searchParams.get('checkout');
       hasServerKey={Boolean(env.GEMINI_API_KEY)}
       ragBackend={env.RAG_BACKEND === 'gemini' ? 'gemini' : 'vectorize'}
       proModel={entitlement.plan.limits.proModel}
+      models={modelChoices({ chatModel: env.CHAT_MODEL, chatModelPro: env.CHAT_MODEL_PRO })}
       client:load
     />
   </div>

@@ -11,45 +11,15 @@
  *   • generateContent с responseModalities:AUDIO — TTS с двама водещи
  */
 
-const DEFAULT_HOST = 'https://generativelanguage.googleapis.com';
+import { AiError } from './ai/error';
+import type { Content, GenerateConfig } from './ai/types';
 
-export class GeminiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly detail?: unknown,
-    /**
-     * Проблем с ключа, а не със самата заявка. Google връща част от тези с 400,
-     * затова статусът не е достатъчен, за да се разпознаят.
-     */
-    readonly keyProblem = false,
-  ) {
-    super(message);
-    this.name = 'GeminiError';
-  }
-}
+const DEFAULT_HOST = 'https://generativelanguage.googleapis.com';
 
 /* ── Типове по протокола ─────────────────────────────────────────────────── */
 
-export interface Part {
-  text?: string;
-  inlineData?: { mimeType: string; data: string };
-  fileData?: { mimeType?: string; fileUri: string };
-}
-
-export interface Content {
-  role?: 'user' | 'model';
-  parts: Part[];
-}
-
-export interface GenerateConfig {
-  temperature?: number;
-  topP?: number;
-  maxOutputTokens?: number;
-  responseMimeType?: string;
-  responseSchema?: unknown;
-  thinkingConfig?: { thinkingBudget?: number };
-}
+// Формата на заявките е и общият език с Cloudflare — виж ai/types.ts.
+export type { Content, GenerateConfig, Part } from './ai/types';
 
 export interface GroundingChunk {
   retrievedContext?: { title?: string; text?: string; uri?: string };
@@ -92,7 +62,7 @@ export class Gemini {
   #uploadBase: string;
 
   constructor(opts: GeminiOptions) {
-    if (!opts.apiKey) throw new GeminiError(401, 'Липсва Gemini API ключ.');
+    if (!opts.apiKey) throw new AiError(401, 'Липсва Gemini API ключ.');
     this.#key = opts.apiKey;
     this.chatModel = opts.chatModel || 'gemini-2.5-flash';
     this.embedModel = opts.embedModel || 'gemini-embedding-001';
@@ -186,7 +156,7 @@ export class Gemini {
       // Понякога моделът обгражда JSON-а с ```json ... ```
       const m = raw.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
       if (m) return JSON.parse(m[0]) as T;
-      throw new GeminiError(502, 'Моделът върна невалиден JSON.', raw.slice(0, 400));
+      throw new AiError(502, 'Моделът върна невалиден JSON.', raw.slice(0, 400));
     }
   }
 
@@ -215,7 +185,7 @@ export class Gemini {
       }),
     );
     if (!res.ok) throw await geminiError(res);
-    if (!res.body) throw new GeminiError(502, 'Празен поток от модела.');
+    if (!res.body) throw new AiError(502, 'Празен поток от модела.');
 
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = '';
@@ -236,7 +206,7 @@ export class Gemini {
         } catch {
           continue;
         }
-        yield { text: textOf(parsed), response: parsed };
+        yield { text: rawTextOf(parsed), response: parsed };
       }
     }
   }
@@ -244,8 +214,9 @@ export class Gemini {
   /* ── вграждания ────────────────────────────────────────────────────────── */
 
   /**
-   * Вгражда пасажи. Cloudflare Vectorize приема най-много 1536 измерения,
-   * затова свиваме изхода и нормализираме (при < 3072 Google не нормализира сам).
+   * Вгражда пасажи. `gemini-embedding-001` връща 3072 числа, но е Matryoshka —
+   * иска се по-малко и се нормализира наново (под 3072 Google не нормализира
+   * сам). Ширината идва отвън, защото трябва да съвпада с Vectorize индекса.
    */
   async embed(
     texts: string[],
@@ -271,7 +242,7 @@ export class Gemini {
       if (out.length === texts.length) return out.map((e) => normalize(e.values));
     } catch (err) {
       // Някои варианти на модела не поддържат групово вграждане — падаме към единични.
-      if (!(err instanceof GeminiError) || err.status < 400 || err.status >= 500) throw err;
+      if (!(err instanceof AiError) || err.status < 400 || err.status >= 500) throw err;
     }
 
     const single = await mapWithConcurrency(requests, 6, async (req) => {
@@ -357,11 +328,11 @@ export class Gemini {
         error?: { message?: string };
       }>(name);
       if (op.done) {
-        if (op.error) throw new GeminiError(502, op.error.message ?? 'Индексирането се провали.');
+        if (op.error) throw new AiError(502, op.error.message ?? 'Индексирането се провали.');
         return op;
       }
     }
-    throw new GeminiError(504, 'Индексирането отне твърде дълго.');
+    throw new AiError(504, 'Индексирането отне твърде дълго.');
   }
 
   /** Инструментът за търсене в хранилищата — подава се в `tools`. */
@@ -413,7 +384,7 @@ export class Gemini {
     const data = part?.inlineData?.data;
     if (!data) {
       const reason = res.promptFeedback?.blockReason ?? res.candidates?.[0]?.finishReason ?? '';
-      throw new GeminiError(502, `Моделът не върна аудио${reason ? ` (${reason})` : ''}.`);
+      throw new AiError(502, `Моделът не върна аудио${reason ? ` (${reason})` : ''}.`);
     }
     return {
       pcm: base64ToBytes(data),
@@ -432,12 +403,19 @@ const RELAXED_SAFETY = [
   'HARM_CATEGORY_DANGEROUS_CONTENT',
 ].map((category) => ({ category, threshold: 'BLOCK_ONLY_HIGH' }));
 
+/** Текстът на завършен отговор. Подрязан, защото моделите слагат нов ред накрая. */
 export function textOf(res: GenerateResponse): string {
+  return rawTextOf(res).trim();
+}
+
+/**
+ * Текстът както е дошъл, без подрязване. За парче от поток подрязването е
+ * грешка: „…падат “ и „ с 55%“ се слепват в „…падатс 55%“, ако всяко парче си
+ * загуби празното място в края.
+ */
+export function rawTextOf(res: GenerateResponse): string {
   const parts = res.candidates?.[0]?.content?.parts ?? [];
-  return parts
-    .map((p) => p.text ?? '')
-    .join('')
-    .trim();
+  return parts.map((p) => p.text ?? '').join('');
 }
 
 /** Грундиращите пасажи, върнати от инструмента File Search. */
@@ -445,7 +423,7 @@ export function groundingChunksOf(res: GenerateResponse): GroundingChunk[] {
   return res.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
 }
 
-async function geminiError(res: Response): Promise<GeminiError> {
+async function geminiError(res: Response): Promise<AiError> {
   let detail: unknown;
   let raw = '';
   try {
@@ -462,7 +440,7 @@ async function geminiError(res: Response): Promise<GeminiError> {
   const message = raw
     ? translateGoogleError(res.status, raw)
     : `Gemini API отговори с ${res.status}`;
-  return new GeminiError(res.status, message, detail, isKeyProblem(res.status, raw));
+  return new AiError(res.status, message, detail, isKeyProblem(res.status, raw));
 }
 
 /** Ключът е отказан, изтекъл, ограничен или без включено API. */
@@ -538,7 +516,7 @@ async function withRetry(fn: () => Promise<Response>, attempts = 4): Promise<Res
       await sleep(backoff(i, null));
     }
   }
-  throw new GeminiError(503, 'Няма връзка с Gemini API.', String(lastError));
+  throw new AiError(503, 'Няма връзка с Gemini API.', String(lastError));
 }
 
 function backoff(attempt: number, retryAfter: string | null): number {

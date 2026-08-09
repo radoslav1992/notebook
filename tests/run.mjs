@@ -45,7 +45,7 @@ const mock = spawn(process.execPath, [join(here, 'mock-gemini.mjs')], {
 let failed = null;
 try {
   await waitForMock();
-  for (const file of ['logic.test.mjs', 'access.test.mjs', 'auth.test.mjs', 'limits.test.mjs', 'docx.test.mjs', 'pdf.test.mjs', 'rag.test.mjs']) {
+  for (const file of ['logic.test.mjs', 'access.test.mjs', 'ai.test.mjs', 'auth.test.mjs', 'limits.test.mjs', 'docx.test.mjs', 'pdf.test.mjs', 'rag.test.mjs']) {
     console.log(`\n──────── ${file} ────────`);
     await run('npx', ['tsx', '--import', join(here, 'loader.mjs'), join(here, file)]);
   }

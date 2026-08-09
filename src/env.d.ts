@@ -14,8 +14,16 @@ interface ZapiskiEnv {
   DB: D1Database;
   /** R2: оригиналните файлове и генерираните аудио файлове. */
   FILES: R2Bucket;
-  /** Vectorize: вгражданията на пасажите (1536 измерения, cosine). */
+  /**
+   * Vectorize: вгражданията на пасажите. Ширината трябва да съвпада с модела за
+   * вграждане — 1536 за `gemini-embedding-001`, 1024 за `@cf/baai/bge-m3`.
+   */
   VECTORIZE: VectorizeIndex;
+  /**
+   * Workers AI. Нужен само ако някой от моделите е на Cloudflare (име с
+   * наклонена черта: `google/…` или `@cf/…`).
+   */
+  AI?: import('./lib/ai/cloudflare').AiBinding;
   /** Статичните файлове; сервират се от Cloudflare, не от worker-а. */
   ASSETS?: Fetcher;
 
@@ -42,9 +50,17 @@ interface ZapiskiEnv {
 
   /* ── Променливи (vars в wrangler.jsonc) ─────────────────────────────── */
   RAG_BACKEND?: 'vectorize' | 'gemini';
+  /**
+   * Моделите. Името избира и доставчика: без наклонена черта значи Google API
+   * с GEMINI_API_KEY, с наклонена черта значи Workers AI през binding-а `AI`.
+   */
   CHAT_MODEL?: string;
+  /** По-добрият модел, който платените планове може да изберат в Настройки. */
+  CHAT_MODEL_PRO?: string;
   EMBED_MODEL?: string;
   TTS_MODEL?: string;
+  /** Ширина на вектора, ако моделът не е в таблицата в ai/select.ts. */
+  EMBED_DIMENSIONS?: string;
   RESPONSE_LANGUAGE?: string;
   /** Адресът, на който приложението живее — за връзките в писмата и OAuth. */
   PUBLIC_SITE_URL?: string;

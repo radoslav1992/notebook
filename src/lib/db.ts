@@ -712,7 +712,8 @@ export async function getSettings(db: D1Database, userId: string): Promise<Setti
   return {
     responseLanguage: row?.response_language ?? 'bg',
     offlineMode: (row?.offline_mode ?? 1) === 1,
-    chatModel: row?.chat_model ?? 'gemini-2.5-flash',
+    // Празно значи „каквото е зададено за инсталацията“ — виж ai/choices.ts.
+    chatModel: row?.chat_model ?? '',
   };
 }
 
@@ -724,7 +725,7 @@ export async function saveSettings(
   await db
     .prepare(
       `INSERT INTO settings (user_id, response_language, offline_mode, chat_model, updated_at)
-       VALUES (?, COALESCE(?, 'bg'), COALESCE(?, 1), COALESCE(?, 'gemini-2.5-flash'), ?)
+       VALUES (?, COALESCE(?, 'bg'), COALESCE(?, 1), COALESCE(?, ''), ?)
        ON CONFLICT(user_id) DO UPDATE SET
          response_language = COALESCE(excluded.response_language, settings.response_language),
          offline_mode      = COALESCE(excluded.offline_mode, settings.offline_mode),

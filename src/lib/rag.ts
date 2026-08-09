@@ -1,6 +1,6 @@
 import { Gemini, groundingChunksOf, textOf } from './gemini';
 import { getChunksByIds, getChunksForSources } from './db';
-import { EMBED_DIMENSIONS } from './constants';
+import { requireGoogleFeature, type Ai } from './ai';
 import { answerSystem } from './prompts';
 import type { Citation, Source } from './types';
 
@@ -19,7 +19,7 @@ export interface Retrieved {
 export interface RagContext {
   db: D1Database;
   vectorize: VectorizeIndex;
-  gemini: Gemini;
+  ai: Ai;
   backend: 'vectorize' | 'gemini';
   storeName?: string | null;
   language: string;
@@ -38,7 +38,7 @@ export async function retrieve(
 ): Promise<Retrieved[]> {
   if (sources.length === 0) return [];
 
-  const [vector] = await ctx.gemini.embed([query], 'RETRIEVAL_QUERY', EMBED_DIMENSIONS);
+  const [vector] = await ctx.ai.embed.embed([query], 'RETRIEVAL_QUERY');
   if (!vector) return [];
 
   const allowed = new Set(sources.map((s) => s.id));
@@ -253,7 +253,7 @@ export async function* answerStream(
 
   let raw = '';
   let emitted = 0;
-  for await (const part of ctx.gemini.stream({
+  for await (const part of ctx.ai.chat.stream({
     model: input.model,
     contents: [...history, { role: 'user', parts: [{ text: prompt }] }],
     systemInstruction: answerSystem(ctx.language),
@@ -304,8 +304,9 @@ async function* answerWithFileSearch(
   | { type: 'delta'; text: string }
   | { type: 'done'; text: string; citations: Citation[] }
 > {
+  const google = requireGoogleFeature(ctx.ai, 'Търсенето през File Search');
   const tool = Gemini.fileSearchTool([ctx.storeName!]);
-  const res = await ctx.gemini.generate({
+  const res = await google.generate({
     model: input.model,
     contents: [...history, { role: 'user', parts: [{ text: input.question }] }],
     systemInstruction: answerSystem(ctx.language),
