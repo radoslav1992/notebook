@@ -51,7 +51,7 @@ export const POST: APIRoute = handler(async (ctx) => {
 
   const body = await readJson<{ minutes?: number }>(ctx.request).catch(() => ({ minutes: 8 }));
   const entitlement = await getEntitlement(env.DB, ctx.locals.user.id);
-  const minutes = Math.min(body.minutes ?? 8, entitlement.plan.limits.audioMinutes);
+  const minutes = Math.min(body.minutes ?? 2, entitlement.plan.limits.audioMinutes);
 
   const rag = await ragContext(ctx, notebook);
   const job = await createJob(env.DB, id, 'audio');

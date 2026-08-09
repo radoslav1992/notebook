@@ -146,9 +146,11 @@ export async function assertCanMakeAudio(db: D1Database, userId: string): Promis
   const [ent, usage] = await Promise.all([getEntitlement(db, userId), getUsage(db, userId)]);
   const max = ent.plan.limits.audioPerMonth;
   if (usage.audio >= max) {
+    // Числото идва от плана, не от прилагателно: „един“ спираше да е вярно още
+    // при първата промяна на безплатния таван.
     throw new QuotaError(
       max === 1
-        ? 'Безплатният план дава един аудио преглед на месец.'
+        ? 'Планът ти дава един аудио преглед на месец.'
         : `Изчерпа ${max} аудио прегледа за този месец.`,
       ent.plan.id,
     );

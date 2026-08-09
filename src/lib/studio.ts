@@ -85,8 +85,9 @@ export interface AudioResult {
  * Прави подкаст с двама водещи: сценарий от източниците → реплики →
  * multi-speaker TTS на сегменти → един WAV файл в R2.
  *
- * Тече във фонов режим (`ctx.waitUntil`) и обновява реда в studio_jobs,
- * защото цялото нещо отнема една до две минути.
+ * Тече във фонов режим (`ctx.waitUntil`) и обновява реда в studio_jobs, защото
+ * отнема десетки секунди. Прегледът е кратък нарочно — виж `audioMinutes` в
+ * plans.ts за двете причини.
  */
 export async function generateAudioOverview(
   ctx: RagContext,
@@ -98,7 +99,9 @@ export async function generateAudioOverview(
     minutes?: number;
   },
 ): Promise<AudioResult> {
-  const minutes = clamp(input.minutes ?? 8, 3, 12);
+  // Долната граница е 1: планът вече дава по 2 минути, а стар клиент може да
+  // поиска повече — таванът е на плана, не тук.
+  const minutes = clamp(input.minutes ?? 2, 1, 12);
 
   await updateJob(ctx.db, input.jobId, {
     status: 'running',
@@ -141,8 +144,8 @@ export async function generateAudioOverview(
     { name: HOSTS.b.name, voice: HOSTS.b.voice },
   ];
 
-  // Пишем директно в един буфер, вместо да пазим всички сегменти наведнъж —
-  // 12 минути звук са ~35 MB, а Workers има 128 MB памет.
+  // Пишем директно в един буфер, вместо да пазим всички сегменти наведнъж:
+  // две минути звук са ~5.8 MB, а Workers има 128 MB памет за всичко.
   const writer = new PcmWriter(minutes * 60 * SAMPLE_RATE * 2 * 1.5);
   let done = 0;
 

@@ -18,7 +18,14 @@ export interface PlanLimits {
   questionsPerMonth: number;
   /** Аудио прегледи на календарен месец. */
   audioPerMonth: number;
-  /** Най-дългият аудио преглед в минути. */
+  /**
+   * Най-дългият аудио преглед в минути.
+   *
+   * Кратко нарочно: TTS-ът се плаща на секунда изговорен звук (~$0.015 на
+   * минута), тоест дължината е почти цялата сметка за тази функция. Освен това
+   * дълъг преглед значи много TTS извиквания в едно изпълнение на worker-а —
+   * точно това забиваше задачите. Два минутен преглед е 1–2 извиквания.
+   */
   audioMinutes: number;
   /** Достъп до по-скъпия модел. */
   proModel: boolean;
@@ -52,15 +59,15 @@ export const PLANS: Record<PlanId, Plan> = {
     limits: {
       notebooks: 3,
       questionsPerMonth: 50,
-      audioPerMonth: 1,
-      audioMinutes: 5,
+      audioPerMonth: 3,
+      audioMinutes: 2,
       proModel: false,
     },
     features: [
       'До 3 тетрадки',
       `До ${SOURCES_PER_NOTEBOOK} източника в тетрадка`,
       '50 въпроса на месец',
-      '1 аудио преглед на месец (до 5 мин.)',
+      '3 аудио прегледа на месец (по 2 мин.)',
       'Отговори с препратка до страница',
       'Учебно ръководство, хронология, отчет, въпроси',
     ],
@@ -74,15 +81,15 @@ export const PLANS: Record<PlanId, Plan> = {
     limits: {
       notebooks: 25,
       questionsPerMonth: 1000,
-      audioPerMonth: 20,
-      audioMinutes: 12,
+      audioPerMonth: 30,
+      audioMinutes: 2,
       proModel: true,
     },
     features: [
       'До 25 тетрадки',
       `До ${SOURCES_PER_NOTEBOOK} източника в тетрадка`,
       '1000 въпроса на месец',
-      '20 аудио прегледа на месец (до 12 мин.)',
+      '30 аудио прегледа на месец (по 2 мин.)',
       'Gemini Pro за по-точни отговори',
       'Мисловна карта по всички източници',
     ],
@@ -97,15 +104,15 @@ export const PLANS: Record<PlanId, Plan> = {
     limits: {
       notebooks: Number.POSITIVE_INFINITY,
       questionsPerMonth: 5000,
-      audioPerMonth: 100,
-      audioMinutes: 12,
+      audioPerMonth: 120,
+      audioMinutes: 2,
       proModel: true,
     },
     features: [
       'Неограничени тетрадки',
       `До ${SOURCES_PER_NOTEBOOK} източника в тетрадка`,
       '5000 въпроса на месец',
-      '100 аудио прегледа на месец (до 12 мин.)',
+      '120 аудио прегледа на месец (по 2 мин.)',
       'Gemini Pro за по-точни отговори',
       'Приоритет при обработката на източници',
     ],

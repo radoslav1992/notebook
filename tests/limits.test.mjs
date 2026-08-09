@@ -5,7 +5,7 @@ const {
   assertCanAsk, assertCanMakeAudio, countQuestion, countAudio,
   markEventProcessed, findUserByCustomerId, QuotaError,
 } = await import('../src/lib/limits.ts');
-const { currentPeriod } = await import('../src/lib/plans.ts');
+const { currentPeriod, PLANS } = await import('../src/lib/plans.ts');
 
 /* ── A tiny in-memory stand-in for the bits of D1 that limits.ts uses ────── */
 
@@ -164,13 +164,18 @@ assert.equal(usage.period, currentPeriod());
 await assert.rejects(() => assertCanAsk(db, U), /50 въпроса/);
 t('questions count up and the 51st is refused');
 
-await countAudio(db, U);
-await assert.rejects(() => assertCanMakeAudio(db, U), /един аудио преглед/);
-t('the free plan allows exactly one audio overview per month');
+// Броят идва от плана — тестът не бива да го дублира като литерал.
+const freeAudio = PLANS.free.limits.audioPerMonth;
+for (let i = 0; i < freeAudio; i++) await countAudio(db, U);
+await assertCanMakeAudio(db, U).then(
+  () => { throw new Error('очаквах отказ след изчерпан таван'); },
+  () => {},
+);
+t(`the free plan allows exactly ${freeAudio} audio overviews per month`);
 
 // Counters are keyed by month, so a new month starts clean without a reset job.
 usage = await getUsage(db, U);
-assert.equal(usage.audio, 1);
+assert.equal(usage.audio, freeAudio);
 assert.equal((await getUsage(db, 'u_other')).questions, 0);
 t('counters are per user and per month');
 
