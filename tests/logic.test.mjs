@@ -5,6 +5,7 @@ const { splitIntoPassages, decodeEntities, normalizeWhitespace } = await import(
 const { parseTurns, groupTurns } = await import('../src/lib/studio.ts');
 const { extractCitations, stripCitationMarkers, citationLabel, shortName } = await import('../src/lib/rag.ts');
 const { pcmToWav, pcmDuration, formatDuration, concatPcm } = await import('../src/lib/audio/wav.ts');
+const { translateGoogleError } = await import('../src/lib/gemini.ts');
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -131,6 +132,36 @@ t('formats durations like the design', () => {
   assert.equal(formatDuration(744), '12:24');
   assert.equal(formatDuration(0), '0:00');
   assert.equal(formatDuration(281), '4:41');
+});
+
+console.log('\ngoogle errors');
+// Съобщенията съдържат и латиница („Gemini API“, имена на променливи), затова
+// проверката е за наличие на български текст, не за първата буква.
+const bg = (s) => /[А-Яа-я]{4,}/.test(s);
+t('the invalid-key message a user actually sees is Bulgarian and actionable', () => {
+  // Точният текст, който Google върна на потребителя при добавяне на източник.
+  const out = translateGoogleError(400, 'API key not valid. Please pass a valid API key.');
+  assert.ok(bg(out), out);
+  assert.ok(out.includes('ключът'), out);
+  assert.ok(!/API key not valid/.test(out), out);
+});
+t('names the fix for a disabled API and for a restricted key', () => {
+  assert.ok(
+    translateGoogleError(
+      403,
+      'Generative Language API has not been used in project 123 before or it is disabled.',
+    ).includes('Google Cloud Console'),
+  );
+  assert.ok(
+    translateGoogleError(403, 'Requests to this API are blocked.').includes('ограниченията'),
+  );
+});
+t('quota and unknown-model cases do not fall through to English', () => {
+  assert.ok(bg(translateGoogleError(429, 'Quota exceeded for quota metric')));
+  assert.ok(translateGoogleError(404, 'models/gemini-9 is not found').includes('CHAT_MODEL'));
+});
+t('an unrecognised message is passed through rather than swallowed', () => {
+  assert.equal(translateGoogleError(400, 'Something entirely new'), 'Something entirely new');
 });
 
 console.log('\n' + pass + ' assertions passed');

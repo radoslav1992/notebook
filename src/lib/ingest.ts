@@ -49,6 +49,9 @@ export async function ingestSource(ctx: IngestContext, source: Source): Promise<
       sub: describeSource(source.kind, extraction, charCount),
     });
   } catch (err) {
+    // Фоновата обработка няма кой да я види, ако не се запише: в базата за
+    // потребителя, в лога за `wrangler tail`.
+    console.error('[zapiski:ingest]', source.kind, source.id, err);
     const message = err instanceof Error ? err.message : String(err);
     await updateSourceStatus(db, source.id, {
       status: 'error',

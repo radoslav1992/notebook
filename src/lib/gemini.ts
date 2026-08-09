@@ -18,6 +18,11 @@ export class GeminiError extends Error {
     readonly status: number,
     message: string,
     readonly detail?: unknown,
+    /**
+     * Проблем с ключа, а не със самата заявка. Google връща част от тези с 400,
+     * затова статусът не е достатъчен, за да се разпознаят.
+     */
+    readonly keyProblem = false,
   ) {
     super(message);
     this.name = 'GeminiError';
@@ -442,11 +447,11 @@ export function groundingChunksOf(res: GenerateResponse): GroundingChunk[] {
 
 async function geminiError(res: Response): Promise<GeminiError> {
   let detail: unknown;
-  let message = `Gemini API отговори с ${res.status}`;
+  let raw = '';
   try {
     const body = (await res.json()) as { error?: { message?: string; status?: string } };
     detail = body;
-    if (body?.error?.message) message = body.error.message;
+    raw = body?.error?.message ?? '';
   } catch {
     try {
       detail = await res.text();
@@ -454,7 +459,65 @@ async function geminiError(res: Response): Promise<GeminiError> {
       /* без тяло */
     }
   }
-  return new GeminiError(res.status, message, detail);
+  const message = raw
+    ? translateGoogleError(res.status, raw)
+    : `Gemini API отговори с ${res.status}`;
+  return new GeminiError(res.status, message, detail, isKeyProblem(res.status, raw));
+}
+
+/** Ключът е отказан, изтекъл, ограничен или без включено API. */
+function isKeyProblem(status: number, raw: string): boolean {
+  const t = raw.toLowerCase();
+  return (
+    t.includes('api key not valid') ||
+    t.includes('api_key_invalid') ||
+    t.includes('api key expired') ||
+    t.includes('are blocked') ||
+    t.includes('api_key_http_referrer_blocked') ||
+    t.includes('has not been used in project') ||
+    t.includes('it is disabled') ||
+    status === 401 ||
+    status === 403
+  );
+}
+
+/**
+ * Google отговаря на английски, а приложението е на български — и тези
+ * съобщения стигат до потребителя (например под източник, който не е минал).
+ * Разпознатите случаи се превеждат и казват какво да се направи; суровият
+ * текст остава в `detail` и в лога.
+ */
+export function translateGoogleError(status: number, raw: string): string {
+  const t = raw.toLowerCase();
+
+  if (t.includes('api key not valid') || t.includes('api_key_invalid')) {
+    return 'Gemini API ключът е отказан от Google. Провери стойността му — най-често е сгрешен, с излишен знак в началото или в края, или е от друг проект.';
+  }
+  if (t.includes('api key expired')) {
+    return 'Gemini API ключът е изтекъл. Направи нов в Google AI Studio.';
+  }
+  if (t.includes('api keys are not supported') || t.includes('expected oauth2')) {
+    return 'Този метод на Google не приема API ключ. Това е грешка в приложението, не в ключа.';
+  }
+  if (t.includes('are blocked') || t.includes('api_key_http_referrer_blocked')) {
+    return 'Google блокира заявката заради ограниченията на ключа. Махни ограниченията по адрес или разреши Generative Language API за него.';
+  }
+  if (t.includes('has not been used in project') || t.includes('it is disabled')) {
+    return 'Generative Language API не е включен за проекта на този ключ. Включи го в Google Cloud Console и опитай пак след минута.';
+  }
+  if (t.includes('user location is not supported')) {
+    return 'Google не обслужва заявки от местоположението на този ключ.';
+  }
+  if (t.includes('quota') || status === 429) {
+    return 'Достигнат е лимитът на Gemini API. Опитай пак след малко.';
+  }
+  if (t.includes('not found') && t.includes('model')) {
+    return 'Моделът не съществува или не е достъпен за този ключ. Провери CHAT_MODEL, EMBED_MODEL и TTS_MODEL.';
+  }
+  if (status === 401 || status === 403) {
+    return 'Google отказа заявката с този ключ.';
+  }
+  return raw;
 }
 
 async function withRetry(fn: () => Promise<Response>, attempts = 4): Promise<Response> {

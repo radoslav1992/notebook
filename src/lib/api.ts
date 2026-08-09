@@ -35,12 +35,11 @@ export function handler(
     } catch (err) {
       if (err instanceof HttpError) return fail(err.status, err.message);
       if (err instanceof GeminiError) {
-        if (err.status === 401 || err.status === 403) {
-          return fail(401, 'Gemini API ключът липсва или е отказан. Провери го в Настройки.');
-        }
-        if (err.status === 429) {
-          return fail(429, 'Достигнат е лимитът на Gemini API. Опитай пак след малко.');
-        }
+        // Съобщението вече е преведено в gemini.ts и казва какво да се направи.
+        // Тук се избира само статусът, по който интерфейсът различава случаите.
+        console.error('[zapiski:gemini]', err.status, err.message, err.detail);
+        if (err.keyProblem) return fail(401, err.message);
+        if (err.status === 429) return fail(429, err.message);
         return fail(502, err.message);
       }
       console.error('[zapiski]', err);
@@ -65,7 +64,9 @@ export function background(promise: Promise<unknown>): void {
 }
 
 export function gemini(ctx: APIContext, model?: string): Gemini {
-  const apiKey = ctx.locals.userGeminiKey || env.GEMINI_API_KEY;
+  // trim: ключ, поставен в Cloudflare или в Настройки, често носи нов ред или
+  // празно място накрая, а Google отговаря на това с „API key not valid“.
+  const apiKey = (ctx.locals.userGeminiKey || env.GEMINI_API_KEY || '').trim();
   if (!apiKey) {
     throw new HttpError(
       401,
