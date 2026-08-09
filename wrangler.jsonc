@@ -46,6 +46,7 @@
   // --dimensions must match EMBED_MODEL: 1536 for gemini-embedding-001, 1024
   // for @cf/baai/bge-m3. Changing the model means a NEW index and re-indexing
   // every source; an existing index cannot be re-sized.
+  //
   // Vectorize has NO local emulator. D1 and R2 run locally in .wrangler/state,
   // but this binding only works against the real index in your account.
   //
@@ -103,7 +104,10 @@
   }
 
   // Secrets (set with `wrangler secret put <NAME>`), see docs/SETUP.md:
-  //   GEMINI_API_KEY          — required, https://aistudio.google.com/apikey
+  //   GEMINI_API_KEY          — https://aistudio.google.com/apikey; required
+  //                             unless every model above is a Cloudflare one,
+  //                             and even then YouTube, uploaded audio and
+  //                             File Search still need it. See docs/models.md.
   //   SESSION_SECRET          — required, openssl rand -hex 32
   //   GOOGLE_CLIENT_ID        — optional, sign-in with Google
   //   GOOGLE_CLIENT_SECRET    — optional, same
