@@ -12,6 +12,7 @@
  */
 
 import { AiError } from './ai/error';
+import { FALLBACK_CHAT_MODEL, FALLBACK_EMBED_MODEL, FALLBACK_TTS_MODEL } from './ai/defaults';
 import type { Content, GenerateConfig } from './ai/types';
 
 const DEFAULT_HOST = 'https://generativelanguage.googleapis.com';
@@ -20,6 +21,16 @@ const DEFAULT_HOST = 'https://generativelanguage.googleapis.com';
 
 // Формата на заявките е и общият език с Cloudflare — виж ai/types.ts.
 export type { Content, GenerateConfig, Part } from './ai/types';
+
+/** Един модел, както го връща ListModels. */
+export interface GeminiModel {
+  /** Готово за поставяне в CHAT_MODEL — без префикса „models/“. */
+  id: string;
+  displayName: string;
+  description: string;
+  /** Напр. „generateContent“, „embedContent“, „countTokens“. */
+  methods: string[];
+}
 
 export interface GroundingChunk {
   retrievedContext?: { title?: string; text?: string; uri?: string };
@@ -64,9 +75,9 @@ export class Gemini {
   constructor(opts: GeminiOptions) {
     if (!opts.apiKey) throw new AiError(401, 'Липсва Gemini API ключ.');
     this.#key = opts.apiKey;
-    this.chatModel = opts.chatModel || 'gemini-2.5-flash';
-    this.embedModel = opts.embedModel || 'gemini-embedding-001';
-    this.ttsModel = opts.ttsModel || 'gemini-2.5-flash-preview-tts';
+    this.chatModel = opts.chatModel || FALLBACK_CHAT_MODEL;
+    this.embedModel = opts.embedModel || FALLBACK_EMBED_MODEL;
+    this.ttsModel = opts.ttsModel || FALLBACK_TTS_MODEL;
     const host = (opts.host || DEFAULT_HOST).replace(/\/+$/, '');
     this.#base = `${host}/v1beta`;
     this.#uploadBase = `${host}/upload/v1beta`;
@@ -97,6 +108,48 @@ export class Gemini {
     );
     if (!res.ok) throw await geminiError(res);
     return (await res.json()) as T;
+  }
+
+  /* ── кои модели са налични ─────────────────────────────────────────────── */
+
+  /**
+   * Моделите, които ТОЗИ ключ може да ползва, с поддържаните методи.
+   *
+   * Единственият надежден отговор на „кой модел да сложа“: Google изтегля
+   * модели по-рано от обявеното и различни ключове виждат различни списъци.
+   * Върнатите имена идват като „models/gemini-3.6-flash“ — префиксът се маха,
+   * за да са готови за поставяне в `CHAT_MODEL`.
+   */
+  async listModels(): Promise<GeminiModel[]> {
+    const out: GeminiModel[] = [];
+    let pageToken = '';
+    // Списъкът е страниран; без обхождане се виждат само първите ~50.
+    for (let page = 0; page < 10; page++) {
+      const query = `models?pageSize=200${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+      const res = await this.#get<{
+        models?: {
+          name?: string;
+          displayName?: string;
+          description?: string;
+          supportedGenerationMethods?: string[];
+          outputTokenLimit?: number;
+        }[];
+        nextPageToken?: string;
+      }>(query);
+
+      for (const m of res.models ?? []) {
+        if (!m.name) continue;
+        out.push({
+          id: m.name.replace(/^models\//, ''),
+          displayName: m.displayName ?? '',
+          description: m.description ?? '',
+          methods: m.supportedGenerationMethods ?? [],
+        });
+      }
+      if (!res.nextPageToken) break;
+      pageToken = res.nextPageToken;
+    }
+    return out;
   }
 
   /* ── генериране ────────────────────────────────────────────────────────── */
@@ -489,8 +542,13 @@ export function translateGoogleError(status: number, raw: string): string {
   if (t.includes('quota') || status === 429) {
     return 'Достигнат е лимитът на Gemini API. Опитай пак след малко.';
   }
+  if (t.includes('no longer available') || t.includes('has been deprecated')) {
+    // Google спира модели за нови ключове по-рано от обявената дата, така че
+    // това идва изневиделица на инсталация, която е работела.
+    return `Този модел вече не се предлага на нови ключове. Смени CHAT_MODEL (и CHAT_MODEL_PRO) в wrangler.jsonc — не в dashboard-а, защото vars го заместват при всеки deploy. Кои модели приема ключът се вижда на /api/models. Google отговори: ${raw}`;
+  }
   if (t.includes('not found') && t.includes('model')) {
-    return 'Моделът не съществува или не е достъпен за този ключ. Провери CHAT_MODEL, EMBED_MODEL и TTS_MODEL.';
+    return `Моделът не съществува или не е достъпен за този ключ. Провери CHAT_MODEL, EMBED_MODEL и TTS_MODEL в wrangler.jsonc; /api/models показва кои приема ключът. Google отговори: ${raw}`;
   }
   if (status === 401 || status === 403) {
     return 'Google отказа заявката с този ключ.';

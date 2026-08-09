@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 const { providerFor, usesGeminiShape, dimensionsFor, isMultilingualEmbed } = await import(
   '../src/lib/ai/select.ts'
 );
-const { modelChoices, resolveChatModel, labelFor } = await import('../src/lib/ai/choices.ts');
+const { modelChoices, resolveChatModel, labelFor, FALLBACK_CHAT_MODEL } = await import(
+  '../src/lib/ai/choices.ts'
+);
 const { CloudflareAi } = await import('../src/lib/ai/cloudflare.ts');
 const { buildAi } = await import('../src/lib/ai/index.ts');
 const { AiError } = await import('../src/lib/ai/error.ts');
@@ -317,6 +319,15 @@ t('the pro model is refused on a free plan, and unknown values fall back', () =>
   assert.equal(resolveChatModel(cfg, 'gemini-2.5-flash', true), 'google/gemini-3.6-flash');
   assert.equal(resolveChatModel(cfg, '', true), 'google/gemini-3.6-flash');
   assert.equal(resolveChatModel(cfg, null, true), 'google/gemini-3.6-flash');
+});
+
+t('the built-in default is a model new keys can still use', () => {
+  // gemini-2.5-flash отговаря „no longer available to new users“ на нов ключ,
+  // тоест стойност по подразбиране от 2.5 значи неработеща инсталация.
+  assert.ok(!FALLBACK_CHAT_MODEL.startsWith('gemini-2.5'), FALLBACK_CHAT_MODEL);
+  assert.equal(modelChoices({}).length, 1);
+  assert.equal(modelChoices({})[0].value, FALLBACK_CHAT_MODEL);
+  assert.equal(resolveChatModel({}, 'gemini-2.5-flash', true), FALLBACK_CHAT_MODEL);
 });
 
 t('labels say the model and where it runs', () => {

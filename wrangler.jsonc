@@ -75,6 +75,13 @@
     "RAG_BACKEND": "vectorize",
 
     // ── Which models, and therefore which provider ────────────────────────
+    //
+    // EDIT THESE HERE, NOT IN THE DASHBOARD. Every `wrangler deploy` replaces
+    // the worker's plain-text variables with this block, so a value typed into
+    // Settings → Variables and Secrets is silently reverted on the next push.
+    // (Secrets are not touched — only plain variables.) `GET /api/models` shows
+    // which models the deployed key actually accepts.
+    //
     // The name picks the provider, because the identifiers never overlap:
     //   no slash        → Google Generative Language API, needs GEMINI_API_KEY
     //   "google/…"      → Workers AI partner model, billed by Cloudflare
@@ -83,11 +90,17 @@
     //   "CHAT_MODEL":  "google/gemini-3.6-flash",
     //   "EMBED_MODEL": "@cf/baai/bge-m3",        // 1024 dims — needs its own index
     //   "TTS_MODEL":   "google/gemini-3.1-flash-tts",
-    "CHAT_MODEL": "gemini-2.5-flash",
-    // Offered in Settings to paid plans only. Leave out for a single model.
-    "CHAT_MODEL_PRO": "gemini-2.5-pro",
+    //
+    // Google retires models EARLIER than the announced shutdown date:
+    // gemini-2.5-flash and gemini-2.5-pro already answer "no longer available
+    // to new users" on new keys, though both are listed for 2026-10-16. Check
+    // /api/models before trusting anything here.
+    "CHAT_MODEL": "gemini-3.6-flash",
+    // Offered in Settings to paid plans only. Left unset because a wrong id
+    // here reaches users as a broken model picker; add yours from /api/models:
+    //   "CHAT_MODEL_PRO": "gemini-3.1-pro",
     "EMBED_MODEL": "gemini-embedding-001",
-    "TTS_MODEL": "gemini-2.5-flash-preview-tts",
+    "TTS_MODEL": "gemini-3.1-flash-tts",
 
     // Vector width. Derived from EMBED_MODEL (see ai/select.ts); set only if a
     // model is missing from that table. Must match the Vectorize index.

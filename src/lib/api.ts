@@ -1,6 +1,14 @@
 import { env, waitUntil } from 'cloudflare:workers';
 import type { APIContext } from 'astro';
-import { AiError, buildAi, defaultChatModel, resolveChatModel, type Ai } from './ai';
+import {
+  AiError,
+  FALLBACK_EMBED_MODEL,
+  FALLBACK_TTS_MODEL,
+  buildAi,
+  defaultChatModel,
+  resolveChatModel,
+  type Ai,
+} from './ai';
 import { HttpError, getNotebook, getSettings, listSources } from './db';
 import { getEntitlement } from './limits';
 import type { RagContext } from './rag';
@@ -75,8 +83,8 @@ export function ai(ctx: APIContext, model?: string): Ai {
   const googleKey = (ctx.locals.userGeminiKey || env.GEMINI_API_KEY || '').trim();
   return buildAi({
     chatModel: model || defaultChatModel({ chatModel: env.CHAT_MODEL }),
-    embedModel: env.EMBED_MODEL || 'gemini-embedding-001',
-    ttsModel: env.TTS_MODEL || 'gemini-2.5-flash-preview-tts',
+    embedModel: env.EMBED_MODEL || FALLBACK_EMBED_MODEL,
+    ttsModel: env.TTS_MODEL || FALLBACK_TTS_MODEL,
     embedDimensions: env.EMBED_DIMENSIONS,
     googleKey: googleKey || undefined,
     googleHost: env.GEMINI_BASE_URL,

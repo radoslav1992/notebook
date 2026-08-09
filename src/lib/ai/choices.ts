@@ -7,6 +7,7 @@
  * обикновеният модел и по-добрият за платените планове.
  */
 
+import { FALLBACK_CHAT_MODEL } from './defaults';
 import { providerFor } from './select';
 
 export interface ModelChoice {
@@ -16,12 +17,12 @@ export interface ModelChoice {
   pro: boolean;
 }
 
+export { FALLBACK_CHAT_MODEL };
+
 export interface ModelConfig {
   chatModel?: string;
   chatModelPro?: string;
 }
-
-export const FALLBACK_CHAT_MODEL = 'gemini-2.5-flash';
 
 export function defaultChatModel(cfg: ModelConfig): string {
   return cfg.chatModel?.trim() || FALLBACK_CHAT_MODEL;
