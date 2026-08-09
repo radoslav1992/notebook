@@ -77,18 +77,16 @@ TTS“ съществува в API-то като `gemini-3.1-flash-tts-preview`,
 
 ## Всичко при Cloudflare
 
-В `wrangler.jsonc`:
+В **Settings → Variables and Secrets** на worker-а, като обикновени променливи:
 
-```jsonc
-"vars": {
-  "CHAT_MODEL": "google/gemini-3.6-flash",
-  "CHAT_MODEL_PRO": "google/gemini-3.6-pro",
-  "EMBED_MODEL": "@cf/baai/bge-m3",
-  "TTS_MODEL": "google/gemini-3.1-flash-tts"
-}
+```
+CHAT_MODEL      = google/gemini-3.6-flash
+CHAT_MODEL_PRO  = google/gemini-3.6-pro
+EMBED_MODEL     = @cf/baai/bge-m3
+TTS_MODEL       = google/gemini-3.1-flash-tts
 ```
 
-И binding-ът, който вече стои там:
+И binding-ът, който стои в `wrangler.jsonc`:
 
 ```jsonc
 "ai": { "binding": "AI" }
@@ -159,7 +157,8 @@ Google стриймва винаги. За модел през Cloudflare при
    npx wrangler vectorize create-metadata-index zapiski-chunks-1024 --propertyName=sourceId --type=string
    ```
 
-2. В `wrangler.jsonc` смени `index_name` на новия и `EMBED_MODEL` на новия модел.
+2. В `wrangler.jsonc` смени `index_name` на новия — индексът е binding, той стои
+   в хранилището. `EMBED_MODEL` се сменя в dashboard-а.
 3. Deploy.
 4. Изтрий и качи наново източниците. Старите пасажи стоят в D1, но векторите им
    ги няма в новия индекс, тоест няма да се намират.
