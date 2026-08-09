@@ -24,9 +24,9 @@
 | --- | --- | --- | --- |
 | 1 | **Gemini API ключ** | отговори, вграждания, подкаст | **Да** |
 | 2 | **Cloudflare акаунт, Workers Paid** (5 $/мес.) | приложението | **Да** |
-| 3 | **D1 база** | тетрадки, източници, разговори | **Да** |
-| 4 | **R2 кофа** | файловете и аудио прегледите | **Да** |
-| 5 | **Vectorize индекс** | търсенето в източниците | **Да** |
+| 3 | **D1 база** | тетрадки, източници, разговори | **Да** — но се създава сама при deploy |
+| 4 | **R2 кофа** | файловете и аудио прегледите | **Да** — също се създава сама |
+| 5 | **Vectorize индекс** | търсенето в източниците | **Да** — това се прави ръчно |
 | 6 | **`SESSION_SECRET`** | подписва сесиите | **Да** |
 | 7 | **Домейн** | адресът на приложението | Не (има `*.workers.dev`) |
 | 8 | **Google OAuth Client** | влизане с Google | Не — без него остава само парола |
@@ -49,15 +49,16 @@ Stripe само процент от оборота.
 
 ```bash
 npm install
-npx wrangler login                       # нужно за създаване на ресурсите
-npx wrangler d1 create zapiski           # копирай database_id в wrangler.jsonc
-npm run db:migrate:local                 # прави таблиците в .wrangler/state
+npm run db:migrate:local     # прави таблиците в локалната база (.wrangler/state)
 
 cp .dev.vars.example .dev.vars
 # сложи GEMINI_API_KEY и SESSION_SECRET (виж стъпки 4 и 8)
 
-npm run dev                              # http://localhost:4321
+npm run dev                  # http://localhost:4321
 ```
+
+Без Cloudflare акаунт и без `wrangler login` — локалните D1 и R2 се въртят на
+твоята машина.
 
 Какво работи и какво не при това положение:
 
@@ -76,25 +77,42 @@ npm run dev                              # http://localhost:4321
 
 ## 3. Cloudflare
 
+### Какво се създава само и какво — не
+
+| Ресурс | Създава се при `wrangler deploy`? |
+| --- | --- |
+| KV за сесиите на Astro (`SESSION`) | **да** |
+| D1 (`zapiski`) | **да** — по име, затова в конфигурацията няма `database_id` |
+| R2 (`zapiski-files`) | **да** |
+| **Vectorize** (`zapiski-chunks`) | **не** — трябва да се направи ръчно |
+| **Таблиците в D1** | **не** — миграциите не са част от deploy |
+
+Тоест при deploy от GitHub оставят две неща за ръчно правене: **Vectorize
+индексът** и **миграциите**. И двете са еднократни.
+
 ```bash
 npx wrangler login
 ```
 
-### D1 — базата
+### D1 — таблиците
+
+Самата база се създава при първия deploy. Таблиците — не:
 
 ```bash
-npx wrangler d1 create zapiski
-```
-
-Копирай `database_id` от изхода в `wrangler.jsonc` на мястото на
-`REPLACE_WITH_YOUR_D1_DATABASE_ID`, после създай таблиците:
-
-```bash
-npm run db:migrate:local     # локалната база
+npm run db:migrate:local     # локалната база в .wrangler/state
 npm run db:migrate           # истинската (--remote)
 ```
 
+Ако предпочиташ базата да е фиксирана, а не намирана по име:
+
+```bash
+npx wrangler d1 create zapiski
+# добави "database_id": "<uuid>" в d1_databases в wrangler.jsonc
+```
+
 ### R2 — файловете
+
+Създава се сам при deploy. Изрично:
 
 ```bash
 npx wrangler r2 bucket create zapiski-files
@@ -316,20 +334,57 @@ STRIPE_TRIAL_DAYS = "14"
 
 ## 9. Пускане в production
 
+Два начина. Изберѝ един.
+
+### А) Deploy от GitHub (Cloudflare Workers Builds)
+
+Cloudflare следи хранилището и пуска ново при всяко бутане в основния клон.
+
+1. Cloudflare → **Workers & Pages → Create → Workers → Connect to Git**.
+2. Избери хранилището и клона.
+3. Командите по подразбиране са правилните — остави ги:
+   - Build command: `npm run build`
+   - Deploy command: `npx wrangler deploy`
+   > Adapter-ът пише `.wrangler/deploy/config.json` при build, откъдето
+   > `wrangler deploy` намира worker-а. Нищо не се настройва ръчно.
+4. **Тайните НЕ се задават в GitHub.** Променливите от build средата не стигат
+   до worker-а по време на работа. Отвори worker-а →
+   **Settings → Variables and Secrets → Add → Secret** и добави поне
+   `GEMINI_API_KEY` и `SESSION_SECRET`. Остават при следващите deploy-и.
+5. Пусни първия deploy. Той създава D1, R2 и KV за сесиите.
+6. Еднократно от терминал (Vectorize и таблиците не се създават от deploy):
+
+   ```bash
+   npx wrangler login
+   npx wrangler vectorize create zapiski-chunks --dimensions=1536 --metric=cosine
+   npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=notebookId --type=string
+   npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
+   npm run db:migrate
+   ```
+
+Ако искаш и миграциите да минават автоматично, смени Deploy command на:
+
+```
+npx wrangler deploy && npx wrangler d1 migrations apply zapiski --remote
+```
+
+Работи само ако token-ът на Workers Builds има права да пише в D1. Ако deploy-ът
+се счупи с грешка за права, върни командата по подразбиране и пускай
+`npm run db:migrate` на ръка при нова миграция.
+
+### Б) Deploy от терминал
+
 ```bash
 npm run db:migrate          # таблиците в истинската база
 npm run deploy              # build + wrangler deploy
 ```
 
-Adapter-ът иска KV namespace за сесиите на Astro (binding `SESSION`) и
-Cloudflare го създава сам при първия deploy.
+### И при двата начина, след първия deploy
 
-След това:
-
-1. Вземи адреса от изхода (`https://zapiski.ТВОЙ-ПОДДОМЕЙН.workers.dev`).
-2. Ако имаш домейн: Cloudflare → Workers & Pages → зададеното приложение →
-   **Settings → Domains & Routes → Add custom domain**.
-3. Задай `PUBLIC_SITE_URL` на крайния адрес.
+1. Вземи адреса (`https://zapiski.ТВОЙ-ПОДДОМЕЙН.workers.dev`).
+2. Ако имаш домейн: worker-ът → **Settings → Domains & Routes → Add custom
+   domain**.
+3. Задай `PUBLIC_SITE_URL` на крайния адрес (Variables and Secrets).
 4. Добави `https://ТОЗИ-АДРЕС/api/auth/google/callback` в Google Credentials.
 5. Насочи Stripe webhook-а към `https://ТОЗИ-АДРЕС/api/billing/webhook`.
 
