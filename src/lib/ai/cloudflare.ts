@@ -190,7 +190,7 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
       // един, а и връщат MP3, докато подкастът се сглобява от сурово PCM.
       throw new AiError(
         400,
-        `Моделът ${this.model} не става за аудио преглед на български. Задай TTS_MODEL на "google/gemini-3.1-flash-tts" (през Cloudflare, с двама водещи) или на "gemini-2.5-flash-preview-tts" с ключ от Google.`,
+        `Моделът ${this.model} не става за аудио преглед на български. Задай TTS_MODEL на "google/gemini-3.1-flash-tts" (през Cloudflare, с двама водещи) или на "gemini-3.1-flash-tts-preview" с ключ от Google.`,
       );
     }
 

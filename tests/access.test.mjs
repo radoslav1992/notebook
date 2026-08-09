@@ -43,6 +43,10 @@ t('the auth and billing endpoints only peek, so they never demand a session', ()
     '/api/auth/google',
     '/api/auth/google/callback',
     '/api/billing/checkout',
+    // Формата за контакт е отворена нарочно — човек без профил също пише — но
+    // минава през „peek“, за да може имейлът на влязъл да се попълни сам.
+    '/contact',
+    '/api/contact',
   ]) {
     assert.equal(classifyRoute(p), 'peek', p);
   }

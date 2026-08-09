@@ -15,7 +15,7 @@ const REQUIRES_AUTH = /^\/(app(\/|$)|api\/(notebooks|settings|me|models)(\/|$))/
  * Тук нарочно НЕ се създава профил — иначе всяко зареждане на /login и всеки
  * опит за вход щеше да оставя празен ред в базата.
  */
-const PEEKS_ONLY = /^\/(login|register|forgot|reset|verify|api\/(auth|billing)(\/|$))/;
+const PEEKS_ONLY = /^\/(login|register|forgot|reset|verify|contact|api\/(auth|billing|contact)(\/|$))/;
 
 /**
  * Stripe идва без бисквитка и се проверява с подпис.

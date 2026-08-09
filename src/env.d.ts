@@ -24,6 +24,11 @@ interface ZapiskiEnv {
    * наклонена черта: `google/…` или `@cf/…`).
    */
   AI?: import('./lib/ai/cloudflare').AiBinding;
+  /**
+   * Cloudflare Email Service. Праща до произволен получател само след като
+   * изпращащият домейн е onboard-нат; дотогава — само потвърдени адреси.
+   */
+  EMAIL?: SendEmail;
   /** Статичните файлове; сервират се от Cloudflare, не от worker-а. */
   ASSETS?: Fetcher;
 
@@ -64,8 +69,12 @@ interface ZapiskiEnv {
   RESPONSE_LANGUAGE?: string;
   /** Адресът, на който приложението живее — за връзките в писмата и OAuth. */
   PUBLIC_SITE_URL?: string;
-  /** Подател на писмата, напр. „Записки <zdravey@tvoydomain.bg>“. */
+  /** Подател на писмата, напр. „Записки <noreply@zapiski.bg>“. */
   EMAIL_FROM?: string;
+  /** Публичният адрес за контакт — показва се на страницата. */
+  CONTACT_EMAIL?: string;
+  /** Къде отиват съобщенията от формата за контакт. */
+  CONTACT_TO?: string;
 
   /* ── Само за тестове: пренасочват външните API-та към макет ──────────── */
   GEMINI_BASE_URL?: string;

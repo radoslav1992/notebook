@@ -6,7 +6,7 @@
  * независимо от останалите. Изборът е името на модела (виж select.ts), тоест
  * преместването на подкаста към Cloudflare е смяна на един низ:
  *
- *   TTS_MODEL: "gemini-2.5-flash-preview-tts"   → Google
+ *   TTS_MODEL: "gemini-3.1-flash-tts-preview"   → Google
  *   TTS_MODEL: "google/gemini-3.1-flash-tts"    → Cloudflare
  */
 

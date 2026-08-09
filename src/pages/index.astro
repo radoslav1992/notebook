@@ -137,7 +137,7 @@ const steps = [
         <div class="spacer"></div>
         <span>Поверителност</span>
         <span>Условия</span>
-        <span>Контакт</span>
+        <a href="/contact">Контакт</a>
         <span>© 2026</span>
       </footer>
     </section>
@@ -519,6 +519,14 @@ const steps = [
     font-size: 16px;
     color: var(--ink);
     font-weight: 600;
+  }
+  .footer a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .footer a:hover {
+    color: var(--brand);
   }
 
   /* ── Дребни екрани ─────────────────────────────────────────────────────── */
