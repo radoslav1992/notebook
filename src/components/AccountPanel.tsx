@@ -108,83 +108,60 @@ export default function AccountPanel({
       <div class="settings-card">
         <div class="settings-section">Профил</div>
 
-        {user.isAnonymous ? (
+        <div class="setting">
+          <div class="grow">
+            <div class="setting-name">{user.email}</div>
+            <div class="setting-hint">
+              {user.emailVerified ? 'Имейлът е потвърден.' : 'Имейлът още не е потвърден.'}
+              {user.hasPassword && user.hasGoogle
+                ? ' Влизаш с парола или с Google.'
+                : user.hasGoogle
+                  ? ' Влизаш с Google.'
+                  : ' Влизаш с парола.'}
+            </div>
+          </div>
+          {!user.emailVerified && (
+            <button class="btn btn-quiet" onClick={resendVerification} disabled={busy === 'verify'}>
+              {busy === 'verify' ? 'Пращам…' : 'Изпрати наново'}
+            </button>
+          )}
+        </div>
+
+        {!user.hasGoogle && googleEnabled && (
           <div class="setting">
             <div class="grow">
-              <div class="setting-name">Работиш като гост</div>
-              <div class="setting-hint">
-                Тетрадките живеят само в този браузър и се губят при изчистване на данните.
-                Направи профил, за да ги запазиш и да ги отваряш отвсякъде.
-              </div>
+              <div class="setting-name">Свържи Google</div>
+              <div class="setting-hint">За да влизаш с един клик, без да помниш паролата.</div>
             </div>
-            <a class="btn btn-primary" style={{ padding: '10px 18px', fontSize: '13.5px' }} href="/register">
-              Направи профил
+            <a class="btn btn-quiet" href="/api/auth/google?next=/app/settings">
+              Свържи
             </a>
           </div>
-        ) : (
-          <>
-            <div class="setting">
-              <div class="grow">
-                <div class="setting-name">{user.email}</div>
-                <div class="setting-hint">
-                  {user.emailVerified ? 'Имейлът е потвърден.' : 'Имейлът още не е потвърден.'}
-                  {user.hasPassword && user.hasGoogle
-                    ? ' Влизаш с парола или с Google.'
-                    : user.hasGoogle
-                      ? ' Влизаш с Google.'
-                      : ' Влизаш с парола.'}
-                </div>
-              </div>
-              {!user.emailVerified && (
-                <button
-                  class="btn btn-quiet"
-                  onClick={resendVerification}
-                  disabled={busy === 'verify'}
-                >
-                  {busy === 'verify' ? 'Пращам…' : 'Изпрати наново'}
-                </button>
-              )}
-            </div>
-
-            {!user.hasGoogle && googleEnabled && (
-              <div class="setting">
-                <div class="grow">
-                  <div class="setting-name">Свържи Google</div>
-                  <div class="setting-hint">
-                    За да влизаш с един клик, без да помниш паролата.
-                  </div>
-                </div>
-                <a class="btn btn-quiet" href="/api/auth/google?next=/app/settings">
-                  Свържи
-                </a>
-              </div>
-            )}
-
-            {!user.hasPassword && (
-              <div class="setting">
-                <div class="grow">
-                  <div class="setting-name">Задай парола</div>
-                  <div class="setting-hint">
-                    За да можеш да влизаш и без Google. Ще получиш връзка на имейла си.
-                  </div>
-                </div>
-                <a class="btn btn-quiet" href="/forgot">
-                  Задай парола
-                </a>
-              </div>
-            )}
-
-            <div class="setting">
-              <div class="grow">
-                <div class="setting-name">Излизане</div>
-                <div class="setting-hint">Затваря сесията на това устройство.</div>
-              </div>
-              <button class="btn btn-quiet" onClick={logout} disabled={busy === 'logout'}>
-                {busy === 'logout' ? 'Излизам…' : 'Излез'}
-              </button>
-            </div>
-          </>
         )}
+
+        {!user.hasPassword && (
+          <div class="setting">
+            <div class="grow">
+              <div class="setting-name">Задай парола</div>
+              <div class="setting-hint">
+                За да можеш да влизаш и без Google. Ще получиш връзка на имейла си.
+              </div>
+            </div>
+            <a class="btn btn-quiet" href="/forgot">
+              Задай парола
+            </a>
+          </div>
+        )}
+
+        <div class="setting">
+          <div class="grow">
+            <div class="setting-name">Излизане</div>
+            <div class="setting-hint">Затваря сесията на това устройство.</div>
+          </div>
+          <button class="btn btn-quiet" onClick={logout} disabled={busy === 'logout'}>
+            {busy === 'logout' ? 'Излизам…' : 'Излез'}
+          </button>
+        </div>
       </div>
 
       {/* ── План ───────────────────────────────────────────────────────── */}

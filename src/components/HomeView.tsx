@@ -8,7 +8,6 @@ type Filter = 'all' | 'recent' | 'shared';
 interface Props {
   notebooks: Notebook[];
   displayName: string;
-  isGuest: boolean;
   /** Таван на плана; `null` значи неограничено. */
   maxNotebooks: number | null;
   /** Колко тетрадки са дошли от профил на гост при влизане. */
@@ -18,7 +17,6 @@ interface Props {
 export default function HomeView({
   notebooks: initial,
   displayName,
-  isGuest,
   maxNotebooks,
   claimed = 0,
 }: Props) {
@@ -80,7 +78,7 @@ export default function HomeView({
     <div class="home">
       <div class="home-head">
         <div>
-          <h1 class="home-hello">{isGuest ? 'Здравей' : `Здравей, ${displayName}`}</h1>
+          <h1 class="home-hello">Здравей, {displayName}</h1>
           <p class="home-sub">
             Качи източниците си и питай каквото искаш. Всеки отговор идва с препратка към документа,
             от който е взет.

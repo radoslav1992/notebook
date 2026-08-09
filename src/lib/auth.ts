@@ -175,52 +175,10 @@ const USER_FIELDS = [
 const USER_COLUMNS = USER_FIELDS.join(', ');
 const USER_COLUMNS_JOINED = USER_FIELDS.map((f) => `u.${f}`).join(', ');
 
-export interface SessionResult {
-  user: User;
-  setCookie?: string;
-}
-
 /**
- * Намира потребителя по сесийната бисквитка. Ако няма валидна сесия, прави
- * анонимен профил — приложението се пробва без регистрация, а тетрадките се
- * прибират при първото влизане (`claimAnonymous`).
- */
-export async function resolveSession(
-  request: Request,
-  db: D1Database,
-  secret: string,
-): Promise<SessionResult> {
-  const raw = readCookie(request.headers.get('cookie'), COOKIE);
-  const token = raw ? await unsign(raw, secret) : null;
-
-  if (token) {
-    const hash = await sha256(token);
-    const row = await db
-      .prepare(
-        `SELECT ${USER_COLUMNS_JOINED}, s.expires_at
-         FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = ?`,
-      )
-      .bind(hash)
-      .first<UserRow & { expires_at: number }>();
-
-    if (row && row.expires_at > now()) {
-      return { user: toUser(row) };
-    }
-    if (row) {
-      await db.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(hash).run();
-    }
-  }
-
-  const user = await createAnonymousUser(db);
-  const { cookie } = await startSession(request, db, secret, user.id);
-  return { user, setCookie: cookie };
-}
-
-/**
- * Чете сесията, ако има валидна, но никога не създава профил.
- * За публични страници (цените), където не искаме всеки минаващ робот да
- * оставя ред в базата.
+ * Чете сесията, ако има валидна, но никога не създава профил — нито на
+ * публичните страници, нито на защитените. Достъпът до /app иска истински
+ * профил, така че минаващите роботи не оставят редове в базата.
  */
 export async function peekSession(
   request: Request,
@@ -244,31 +202,7 @@ export async function peekSession(
   return toUser(row);
 }
 
-export async function createAnonymousUser(db: D1Database): Promise<User> {
-  const id = newId('u');
-  const ts = now();
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO users (id, display_name, initials, created_at, is_anonymous, email_verified)
-         VALUES (?, 'Гост', 'ГО', ?, 1, 0)`,
-      )
-      .bind(id, ts),
-    db.prepare('INSERT INTO settings (user_id, updated_at) VALUES (?, ?)').bind(id, ts),
-  ]);
-  return {
-    id,
-    displayName: 'Гост',
-    initials: 'ГО',
-    email: null,
-    emailVerified: false,
-    isAnonymous: true,
-    hasPassword: false,
-    hasGoogle: false,
-  };
-}
-
-/** Създава истински профил направо — когато регистрацията идва без сесия. */
+/** Създава истински профил — регистрацията винаги идва без сесия. */
 export async function createUser(
   db: D1Database,
   input: {

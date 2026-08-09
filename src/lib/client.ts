@@ -41,11 +41,19 @@ async function unwrap<T>(res: Response): Promise<T> {
     return (await res.json()) as T;
   }
   let message = `Заявката се провали (${res.status}).`;
+  let signedOut = false;
   try {
-    const body = (await res.json()) as { error?: string };
+    const body = (await res.json()) as { error?: string; signedOut?: boolean };
     if (body?.error) message = body.error;
+    signedOut = body?.signedOut === true;
   } catch {
     /* без тяло */
+  }
+  // Изтекла сесия: няма смисъл от съобщение в интерфейса, който вече не е наш.
+  // Само този признак праща към входа — 401 идва и при отказан Gemini ключ.
+  if (signedOut && typeof location !== 'undefined') {
+    const next = encodeURIComponent(location.pathname + location.search);
+    location.assign(`/login?next=${next}`);
   }
   throw new ApiError(res.status, message);
 }
