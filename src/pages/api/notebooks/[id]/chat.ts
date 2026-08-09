@@ -9,6 +9,7 @@ import {
   selectedSources,
 } from '~/lib/api';
 import { HttpError, clearMessages, insertMessage, listMessages, touchNotebook } from '~/lib/db';
+import { assertCanAsk, countQuestion } from '~/lib/limits';
 import { answerStream } from '~/lib/rag';
 
 export const prerender = false;
@@ -41,6 +42,8 @@ export const POST: APIRoute = handler(async (ctx) => {
   if (!question) throw new HttpError(400, 'Въпросът е празен.');
   if (question.length > 4000) throw new HttpError(400, 'Въпросът е твърде дълъг.');
 
+  await assertCanAsk(env.DB, ctx.locals.user.id);
+
   const [history, sources, rag] = await Promise.all([
     listMessages(env.DB, id),
     selectedSources(id),
@@ -48,6 +51,9 @@ export const POST: APIRoute = handler(async (ctx) => {
   ]);
 
   const userMessage = await insertMessage(env.DB, id, 'user', question);
+  // Отчита се на задаване, не на успешен отговор: иначе повтарящ се въпрос
+  // при грешка в модела не се брои и лимитът се обхожда.
+  await countQuestion(env.DB, ctx.locals.user.id);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

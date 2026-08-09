@@ -2,23 +2,72 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import Chrome from '../../components/Chrome.astro';
+import AccountPanel from '../../components/AccountPanel';
 import SettingsView from '../../components/SettingsView';
 import { getSettings } from '../../lib/db';
+import { getEntitlement, getUsage } from '../../lib/limits';
 import '../../styles/app.css';
+import '../../styles/auth.css';
 
 export const prerender = false;
 
 const user = Astro.locals.user;
-const settings = await getSettings(env.DB, user.id);
+const [settings, entitlement, usage] = await Promise.all([
+  getSettings(env.DB, user.id),
+  getEntitlement(env.DB, user.id),
+  getUsage(env.DB, user.id),
+]);
+
+const subscription = {
+  plan: entitlement.plan.id,
+  planName: entitlement.plan.name,
+  status: entitlement.status,
+  interval: entitlement.interval,
+  currentPeriodEnd: entitlement.currentPeriodEnd,
+  cancelAtPeriodEnd: entitlement.cancelAtPeriodEnd,
+  hasStripeCustomer: Boolean(entitlement.stripeCustomerId),
+  limits: {
+    ...entitlement.plan.limits,
+    // JSON не носи Infinity; интерфейсът показва „∞“ при null.
+    notebooks: Number.isFinite(entitlement.plan.limits.notebooks)
+      ? entitlement.plan.limits.notebooks
+      : null,
+  },
+};
+
+const checkout = Astro.url.searchParams.get('checkout');
 ---
 
 <Base title="Настройки — Записки">
-  <Chrome initials={user.initials} active="settings" />
-  <SettingsView
-    settings={settings}
-    user={user}
-    hasServerKey={Boolean(env.GEMINI_API_KEY)}
-    ragBackend={env.RAG_BACKEND === 'gemini' ? 'gemini' : 'vectorize'}
-    client:load
-  />
+  <Chrome user={user} active="settings" />
+  <div class="settings">
+    <h1>Настройки</h1>
+
+    {
+      checkout === 'success' && (
+        <div class="auth-message good" style="margin-bottom:20px">
+          Плащането мина. Новият план вече важи — ако горе още се вижда старият, презареди след
+          няколко секунди.
+        </div>
+      )
+    }
+
+    <AccountPanel
+      user={user}
+      subscription={subscription}
+      usage={usage}
+      billingEnabled={Boolean(env.STRIPE_SECRET_KEY)}
+      googleEnabled={Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET)}
+      client:load
+    />
+
+    <SettingsView
+      settings={settings}
+      user={user}
+      hasServerKey={Boolean(env.GEMINI_API_KEY)}
+      ragBackend={env.RAG_BACKEND === 'gemini' ? 'gemini' : 'vectorize'}
+      proModel={entitlement.plan.limits.proModel}
+      client:load
+    />
+  </div>
 </Base>

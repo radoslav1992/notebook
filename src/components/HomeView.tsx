@@ -8,14 +8,26 @@ type Filter = 'all' | 'recent' | 'shared';
 interface Props {
   notebooks: Notebook[];
   displayName: string;
+  isGuest: boolean;
+  /** Таван на плана; `null` значи неограничено. */
+  maxNotebooks: number | null;
+  /** Колко тетрадки са дошли от профил на гост при влизане. */
+  claimed?: number;
 }
 
-export default function HomeView({ notebooks: initial, displayName }: Props) {
+export default function HomeView({
+  notebooks: initial,
+  displayName,
+  isGuest,
+  maxNotebooks,
+  claimed = 0,
+}: Props) {
   const [notebooks, setNotebooks] = useState(initial);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [quotaHit, setQuotaHit] = useState(false);
 
   const visible = useMemo(() => {
     if (filter === 'shared') return [];
@@ -43,6 +55,8 @@ export default function HomeView({ notebooks: initial, displayName }: Props) {
       const { notebook } = await apiSend<{ notebook: Notebook }>('/api/notebooks', 'POST', {});
       window.location.href = `/app/notebook/${notebook.id}?add=1`;
     } catch (err) {
+      // 402 значи изчерпан план — тогава показваме път напред, не просто грешка.
+      if (err instanceof ApiError && err.status === 402) setQuotaHit(true);
       setError(err instanceof ApiError ? err.message : 'Тетрадката не беше създадена.');
       setCreating(false);
     }
@@ -66,7 +80,7 @@ export default function HomeView({ notebooks: initial, displayName }: Props) {
     <div class="home">
       <div class="home-head">
         <div>
-          <h1 class="home-hello">Здравей, {displayName}</h1>
+          <h1 class="home-hello">{isGuest ? 'Здравей' : `Здравей, ${displayName}`}</h1>
           <p class="home-sub">
             Качи източниците си и питай каквото искаш. Всеки отговор идва с препратка към документа,
             от който е взет.
@@ -93,6 +107,11 @@ export default function HomeView({ notebooks: initial, displayName }: Props) {
             />
           </label>
           <div class="grow" />
+          {maxNotebooks !== null && (
+            <span class="quota-pill">
+              {notebooks.length} / {maxNotebooks} тетрадки
+            </span>
+          )}
           <div class="filters">
             <button
               class={`pill filter ${filter === 'all' ? 'on' : ''}`}
@@ -116,7 +135,27 @@ export default function HomeView({ notebooks: initial, displayName }: Props) {
         </div>
       )}
 
-      {error && <div class="banner-error" style={{ margin: '0 0 16px' }}>{error}</div>}
+      {claimed > 0 && (
+        <div class="claimed-note">
+          {claimed === 1
+            ? 'Тетрадката, която направи преди да влезеш, вече е в профила ти.'
+            : `${claimed} тетрадки, които направи преди да влезеш, вече са в профила ти.`}
+        </div>
+      )}
+
+      {error && (
+        <div class="banner-error" style={{ margin: '0 0 16px' }}>
+          {error}
+          {quotaHit && (
+            <>
+              {' '}
+              <a href="/pricing" style={{ fontWeight: 700, textDecoration: 'underline' }}>
+                Виж плановете
+              </a>
+            </>
+          )}
+        </div>
+      )}
 
       {isEmpty ? (
         <div class="empty">

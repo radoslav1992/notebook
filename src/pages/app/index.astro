@@ -4,15 +4,29 @@ import Base from '../../layouts/Base.astro';
 import Chrome from '../../components/Chrome.astro';
 import HomeView from '../../components/HomeView';
 import { listNotebooks } from '../../lib/db';
+import { getEntitlement } from '../../lib/limits';
 import '../../styles/app.css';
 
 export const prerender = false;
 
 const user = Astro.locals.user;
-const notebooks = await listNotebooks(env.DB, user.id);
+const [notebooks, entitlement] = await Promise.all([
+  listNotebooks(env.DB, user.id),
+  getEntitlement(env.DB, user.id),
+]);
+
+const max = entitlement.plan.limits.notebooks;
+const claimed = Number(Astro.url.searchParams.get('claimed') ?? '0') || 0;
 ---
 
 <Base title="Записки — тетрадките ти">
-  <Chrome initials={user.initials} active="home" />
-  <HomeView notebooks={notebooks} displayName={user.displayName} client:load />
+  <Chrome user={user} active="home" />
+  <HomeView
+    notebooks={notebooks}
+    displayName={user.displayName}
+    isGuest={user.isAnonymous}
+    maxNotebooks={Number.isFinite(max) ? max : null}
+    claimed={claimed}
+    client:load
+  />
 </Base>

@@ -1,0 +1,16 @@
+---
+import { env } from 'cloudflare:workers';
+import Auth from '../layouts/Auth.astro';
+import AuthCard from '../components/AuthCard';
+
+export const prerender = false;
+---
+
+<Auth title="Забравена парола — Записки">
+  <AuthCard
+    mode="forgot"
+    googleEnabled={false}
+    emailEnabled={Boolean(env.RESEND_API_KEY)}
+    client:load
+  />
+</Auth>

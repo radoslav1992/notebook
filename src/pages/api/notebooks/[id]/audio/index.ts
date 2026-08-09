@@ -10,6 +10,7 @@ import {
   selectedSources,
 } from '~/lib/api';
 import { HttpError, createJob, getLatestJob, updateJob } from '~/lib/db';
+import { assertCanMakeAudio, countAudio, getEntitlement } from '~/lib/limits';
 import { generateAudioOverview } from '~/lib/studio';
 
 export const prerender = false;
@@ -35,14 +36,20 @@ export const POST: APIRoute = handler(async (ctx) => {
     return json({ job: existing, alreadyRunning: true });
   }
 
+  await assertCanMakeAudio(env.DB, ctx.locals.user.id);
+
   const sources = await selectedSources(id);
   if (sources.length === 0) {
     throw new HttpError(400, 'Избери поне един обработен източник.');
   }
 
   const body = await readJson<{ minutes?: number }>(ctx.request).catch(() => ({ minutes: 8 }));
+  const entitlement = await getEntitlement(env.DB, ctx.locals.user.id);
+  const minutes = Math.min(body.minutes ?? 8, entitlement.plan.limits.audioMinutes);
+
   const rag = await ragContext(ctx, notebook);
   const job = await createJob(env.DB, id, 'audio');
+  await countAudio(env.DB, ctx.locals.user.id);
 
   background(
     generateAudioOverview(rag, {
@@ -50,7 +57,7 @@ export const POST: APIRoute = handler(async (ctx) => {
       notebookId: id,
       sources,
       files: env.FILES,
-      minutes: body.minutes,
+      minutes,
     }).catch(async (err: unknown) => {
       const message = err instanceof Error ? err.message : 'Генерирането се провали.';
       console.error('[zapiski:audio]', err);

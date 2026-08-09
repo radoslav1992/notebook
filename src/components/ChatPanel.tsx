@@ -10,6 +10,8 @@ interface Props {
   streaming: string | null;
   thinking: boolean;
   error: string;
+  /** Грешката е от изчерпан план — показваме връзка към плановете. */
+  quotaHit?: boolean;
   model: string;
   selectedCount: number;
   totalCount: number;
@@ -24,6 +26,7 @@ export default function ChatPanel({
   streaming,
   thinking,
   error,
+  quotaHit = false,
   model,
   selectedCount,
   totalCount,
@@ -118,7 +121,19 @@ export default function ChatPanel({
         )}
       </div>
 
-      {error && <div class="banner-error">{error}</div>}
+      {error && (
+        <div class="banner-error">
+          {error}
+          {quotaHit && (
+            <>
+              {' '}
+              <a href="/pricing" style={{ fontWeight: 700, textDecoration: 'underline' }}>
+                Виж плановете
+              </a>
+            </>
+          )}
+        </div>
+      )}
 
       <div class="composer-wrap">
         <div class="suggestions">

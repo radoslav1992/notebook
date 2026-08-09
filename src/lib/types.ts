@@ -8,6 +8,12 @@ export interface User {
   id: string;
   displayName: string;
   initials: string;
+  email: string | null;
+  emailVerified: boolean;
+  /** Профил без регистрация — приложението се пробва, преди да се влезе. */
+  isAnonymous: boolean;
+  hasPassword: boolean;
+  hasGoogle: boolean;
 }
 
 export interface Notebook {

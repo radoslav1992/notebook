@@ -38,7 +38,7 @@ const openAdd = Astro.url.searchParams.get('add') === '1';
 ---
 
 <Base title={`${notebook.title} — Записки`}>
-  <Chrome initials={user.initials} />
+  <Chrome user={user} />
   <Workspace
     notebook={notebook}
     sources={sources}

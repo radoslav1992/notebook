@@ -1,11 +1,14 @@
 ---
+import type { User } from '../lib/types';
+
 interface Props {
-  initials: string;
+  user: User;
   /** Кой раздел е активен — за подчертаване в лентата. */
   active?: 'home' | 'settings';
 }
 
-const { initials, active } = Astro.props;
+const { user, active } = Astro.props;
+const guest = user.isAnonymous;
 ---
 
 <header class="chrome">
@@ -19,9 +22,36 @@ const { initials, active } = Astro.props;
     <a class="btn-quiet btn" class:list={[{ on: active === 'settings' }]} href="/app/settings"
       >Настройки</a
     >
-    <div class="avatar" title="Профил">{initials}</div>
+    {
+      guest ? (
+        <>
+          <a class="btn-quiet btn hide-narrow" href="/login">Влез</a>
+          <a class="btn btn-primary signup" href="/register">Запази работата си</a>
+        </>
+      ) : (
+        <div class="avatar" title={user.email ?? user.displayName}>{user.initials}</div>
+      )
+    }
   </nav>
 </header>
+
+{
+  guest && (
+    <div class="guest-strip">
+      Работиш като гост — тетрадките живеят само в този браузър.
+      <a href="/register">Направи профил</a>, за да ги запазиш.
+    </div>
+  )
+}
+
+{
+  !guest && !user.emailVerified && user.email && (
+    <div class="guest-strip warn">
+      Имейлът <strong>{user.email}</strong> още не е потвърден.
+      <a href="/app/settings">Изпрати писмото наново</a>
+    </div>
+  )
+}
 
 <style>
   .chrome {
@@ -85,6 +115,11 @@ const { initials, active } = Astro.props;
     background: var(--brand-tint);
   }
 
+  .signup {
+    font-size: 12.5px;
+    padding: 7px 14px;
+  }
+
   .avatar {
     width: 32px;
     height: 32px;
@@ -98,6 +133,26 @@ const { initials, active } = Astro.props;
     font-size: 12.5px;
     margin-left: 4px;
     flex-shrink: 0;
+  }
+
+  /* Лентата за гости е предупреждение, не украса — стои плътно под шапката. */
+  .guest-strip {
+    background: var(--brand-tint);
+    color: var(--brand);
+    font-size: 12.5px;
+    font-weight: 500;
+    text-align: center;
+    padding: 8px 16px;
+    line-height: 1.5;
+  }
+  .guest-strip.warn {
+    background: #fbeceb;
+    color: #8d2b20;
+  }
+  .guest-strip a {
+    font-weight: 700;
+    text-decoration: underline;
+    color: inherit;
   }
 
   @media (max-width: 620px) {
@@ -119,8 +174,11 @@ const { initials, active } = Astro.props;
     .name {
       font-size: 18px;
     }
+    .hide-narrow {
+      display: none;
+    }
     /* Логото вече води към началния екран, така че връзката е излишна тук. */
-    .actions .btn:first-child {
+    .actions > .btn:first-child {
       display: none;
     }
     .avatar {

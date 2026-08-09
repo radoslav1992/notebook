@@ -1,0 +1,19 @@
+---
+import Base from './Base.astro';
+import '../styles/auth.css';
+
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+---
+
+<Base title={title}>
+  <div class="auth">
+    <a class="auth-brand" href="/">
+      <span class="mark">З</span>
+      <span class="name">Записки</span>
+    </a>
+    <slot />
+  </div>
+</Base>

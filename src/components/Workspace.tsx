@@ -39,6 +39,7 @@ export default function Workspace(props: Props) {
   const [streaming, setStreaming] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);
   const [chatError, setChatError] = useState('');
+  const [quotaHit, setQuotaHit] = useState(false);
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
 
   const abort = useRef<AbortController | null>(null);
@@ -136,8 +137,15 @@ export default function Workspace(props: Props) {
 
   /* ── Чат ─────────────────────────────────────────────────────────────── */
 
+  /** 402 идва от лимит на плана — тогава показваме път напред. */
+  function reportError(err: unknown, fallback: string) {
+    if (err instanceof ApiError && err.status === 402) setQuotaHit(true);
+    setChatError(err instanceof ApiError ? err.message : fallback);
+  }
+
   async function ask(question: string) {
     setChatError('');
+    setQuotaHit(false);
     setThinking(true);
     setStreaming(null);
     abort.current?.abort();
@@ -170,7 +178,7 @@ export default function Workspace(props: Props) {
       );
     } catch (err) {
       if ((err as Error)?.name !== 'AbortError') {
-        setChatError(err instanceof ApiError ? err.message : 'Отговорът не стигна до тук.');
+        reportError(err, 'Отговорът не стигна до тук.');
       }
     } finally {
       setThinking(false);
@@ -191,7 +199,7 @@ export default function Workspace(props: Props) {
       setAudioJob(job);
       setTab('studio');
     } catch (err) {
-      setChatError(err instanceof ApiError ? err.message : 'Аудиото не беше пуснато.');
+      reportError(err, 'Аудиото не беше пуснато.');
     }
   }
 
@@ -206,7 +214,7 @@ export default function Workspace(props: Props) {
       );
       setNotes((list) => [note, ...list]);
     } catch (err) {
-      setChatError(err instanceof ApiError ? err.message : 'Материалът не беше създаден.');
+      reportError(err, 'Материалът не беше създаден.');
     } finally {
       setBusyTask(null);
     }
@@ -287,6 +295,7 @@ export default function Workspace(props: Props) {
           streaming={streaming}
           thinking={thinking}
           error={chatError}
+          quotaHit={quotaHit}
           model={props.model}
           selectedCount={selected.length}
           totalCount={sources.length}

@@ -2,6 +2,7 @@ import { env, waitUntil } from 'cloudflare:workers';
 import type { APIContext } from 'astro';
 import { Gemini, GeminiError } from './gemini';
 import { HttpError, getNotebook, getSettings, listSources } from './db';
+import { getEntitlement } from './limits';
 import type { RagContext } from './rag';
 import type { IngestContext } from './ingest';
 import type { Notebook, Source } from './types';
@@ -116,11 +117,19 @@ export async function ragContext(
   notebook: Notebook,
   model?: string,
 ): Promise<RagContext> {
-  const settings = await getSettings(env.DB, ctx.locals.user.id);
+  const [settings, entitlement] = await Promise.all([
+    getSettings(env.DB, ctx.locals.user.id),
+    getEntitlement(env.DB, ctx.locals.user.id),
+  ]);
+  // Pro моделът е за платените планове; иначе тихо падаме на Flash.
+  let chosen = model ?? settings.chatModel;
+  if (!entitlement.plan.limits.proModel && chosen.includes('pro')) {
+    chosen = 'gemini-2.5-flash';
+  }
   return {
     db: env.DB,
     vectorize: env.VECTORIZE,
-    gemini: gemini(ctx, model ?? settings.chatModel),
+    gemini: gemini(ctx, chosen),
     backend: backendOf(),
     storeName: notebook.storeName,
     language: settings.responseLanguage || env.RESPONSE_LANGUAGE || 'bg',

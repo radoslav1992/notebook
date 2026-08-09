@@ -7,6 +7,8 @@ interface Props {
   user: User;
   hasServerKey: boolean;
   ragBackend: 'vectorize' | 'gemini';
+  /** Дали планът дава достъп до по-скъпия модел. */
+  proModel: boolean;
 }
 
 const LANGUAGES: { value: string; label: string }[] = [
@@ -16,13 +18,19 @@ const LANGUAGES: { value: string; label: string }[] = [
   { value: 'ru', label: 'Руски' },
 ];
 
-const MODELS: { value: string; label: string }[] = [
+const MODELS: { value: string; label: string; pro?: boolean }[] = [
   { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — бърз' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — по-точен' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — по-точен', pro: true },
   { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite — най-евтин' },
 ];
 
-export default function SettingsView({ settings: initial, user: initialUser, hasServerKey, ragBackend }: Props) {
+export default function SettingsView({
+  settings: initial,
+  user: initialUser,
+  hasServerKey,
+  ragBackend,
+  proModel,
+}: Props) {
   const [settings, setSettings] = useState(initial);
   const [user, setUser] = useState(initialUser);
   const [key, setKey] = useState('');
@@ -81,9 +89,7 @@ export default function SettingsView({ settings: initial, user: initialUser, has
   }
 
   return (
-    <div class="settings">
-      <h1>Настройки</h1>
-
+    <>
       <div class="settings-card">
         <div class="settings-section">Модел</div>
 
@@ -127,7 +133,10 @@ export default function SettingsView({ settings: initial, user: initialUser, has
         <div class="setting">
           <div class="grow">
             <div class="setting-name">Модел за отговорите</div>
-            <div class="setting-hint">Pro е по-точен при дълги документи, Flash е по-бърз.</div>
+            <div class="setting-hint">
+              Pro е по-точен при дълги документи, Flash е по-бърз.
+              {!proModel && ' Pro е достъпен в платените планове.'}
+            </div>
           </div>
           <select
             class="select"
@@ -135,8 +144,9 @@ export default function SettingsView({ settings: initial, user: initialUser, has
             onChange={(e) => void patch({ chatModel: (e.target as HTMLSelectElement).value })}
           >
             {MODELS.map((m) => (
-              <option key={m.value} value={m.value}>
+              <option key={m.value} value={m.value} disabled={m.pro && !proModel}>
                 {m.label}
+                {m.pro && !proModel ? ' (Плюс)' : ''}
               </option>
             ))}
           </select>
@@ -169,7 +179,9 @@ export default function SettingsView({ settings: initial, user: initialUser, has
                 : 'Собствен индекс в Cloudflare Vectorize — цитатите сочат до страница.'}
             </div>
           </div>
-          <span class="setting-chip">{ragBackend === 'gemini' ? 'Google File Search' : 'Vectorize'}</span>
+          <span class="setting-chip">
+            {ragBackend === 'gemini' ? 'Google File Search' : 'Vectorize'}
+          </span>
         </div>
 
         <div class="setting">
@@ -190,11 +202,13 @@ export default function SettingsView({ settings: initial, user: initialUser, has
       </div>
 
       <div class="settings-card">
-        <div class="settings-section">Профил</div>
+        <div class="settings-section">Показвано име</div>
         <div class="setting">
           <div class="grow">
             <div class="setting-name">Име</div>
-            <div class="setting-hint">Показва се на началния екран и в аватара ({user.initials}).</div>
+            <div class="setting-hint">
+              Показва се на началния екран и в аватара ({user.initials}).
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
@@ -233,8 +247,12 @@ export default function SettingsView({ settings: initial, user: initialUser, has
       </div>
 
       {note && <div class="saved-note">{note}</div>}
-      {error && <div class="banner-error" style={{ margin: '14px 0 0' }}>{error}</div>}
-    </div>
+      {error && (
+        <div class="banner-error" style={{ margin: '14px 0 0' }}>
+          {error}
+        </div>
+      )}
+    </>
   );
 }
 

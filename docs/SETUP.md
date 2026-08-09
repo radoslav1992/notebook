@@ -1,39 +1,86 @@
-# Пускане на Записки
+# Пускане на Записки — стъпка по стъпка
 
 Всичко, което трябва да предоставиш, и точните команди за него.
+
+**Съдържание**
+
+1. [Какво ти трябва — кратък списък](#1-какво-ти-трябва)
+2. [Локална работа за 5 минути](#2-локална-работа-за-5-минути)
+3. [Cloudflare: D1, R2, Vectorize](#3-cloudflare)
+4. [Gemini API ключ](#4-gemini-api-ключ)
+5. [Влизане с Google](#5-влизане-с-google)
+6. [Имейли (Resend)](#6-имейли)
+7. [Абонаменти (Stripe)](#7-абонаменти-stripe)
+8. [Тайни и променливи — пълен списък](#8-тайни-и-променливи)
+9. [Пускане в production](#9-пускане-в-production)
+10. [Проверка, че всичко работи](#10-проверка)
+11. [Ако нещо не работи](#11-ако-нещо-не-работи)
 
 ---
 
 ## 1. Какво ти трябва
 
-| Ресурс | За какво | Как се взима |
-| --- | --- | --- |
-| **Gemini API ключ** | отговори, вграждания, подкаст | https://aistudio.google.com/apikey |
-| **Cloudflare акаунт, Workers Paid** | самото приложение | https://dash.cloudflare.com |
-| **D1 база** | тетрадки, източници, пасажи, разговори | команда по-долу |
-| **R2 кофа** | оригиналните файлове + аудио прегледите | команда по-долу |
-| **Vectorize индекс** | търсене в пасажите | команда по-долу |
-| **`SESSION_SECRET`** | подписва бисквитката на сесията | `openssl rand -hex 32` |
+| # | Ресурс | За какво | Нужен ли е, за да пуснеш? |
+| --- | --- | --- | --- |
+| 1 | **Gemini API ключ** | отговори, вграждания, подкаст | **Да** |
+| 2 | **Cloudflare акаунт, Workers Paid** (5 $/мес.) | приложението | **Да** |
+| 3 | **D1 база** | тетрадки, източници, разговори | **Да** |
+| 4 | **R2 кофа** | файловете и аудио прегледите | **Да** |
+| 5 | **Vectorize индекс** | търсенето в източниците | **Да** |
+| 6 | **`SESSION_SECRET`** | подписва сесиите | **Да** |
+| 7 | **Домейн** | адресът на приложението | Не (има `*.workers.dev`) |
+| 8 | **Google OAuth Client** | влизане с Google | Не — без него остава само парола |
+| 9 | **Resend акаунт** | потвърждаване на имейл, нова парола | Не — но иначе тези две неща не работят |
+| 10 | **Stripe акаунт** | абонаменти | Не — без него всички са на безплатния план |
 
-**Защо Workers Paid, а не безплатният план:**
+**Защо Workers Paid, а не безплатният план:** Vectorize го няма в безплатния
+план, а безплатните 10 ms CPU на заявка не стигат за разчитане на PDF и
+сглобяване на WAV. Платеният дава 30 s.
 
-- Vectorize го няма в безплатния план.
-- Безплатният план дава 10 ms CPU на заявка. Разчитането на 48-страничен PDF и
-  сглобяването на WAV минават далеч над това; платеният план дава 30 s.
-
-Ако не искаш Vectorize, мини на `RAG_BACKEND: "gemini"` (стъпка 6) — тогава
-търсенето е в Google File Search и остават само D1 и R2.
+Приблизителна сметка на месец при малко потребление: Cloudflare 5 $ + Gemini
+по потребление (центове при десетки въпроси) + Resend 0 $ до 3000 писма +
+Stripe само процент от оборота.
 
 ---
 
-## 2. Създаване на ресурсите
+## 2. Локална работа за 5 минути
+
+Дотук стига без Google, без Resend и без Stripe:
 
 ```bash
 npm install
+npx wrangler login                       # нужно за създаване на ресурсите
+npx wrangler d1 create zapiski           # копирай database_id в wrangler.jsonc
+npm run db:migrate:local                 # прави таблиците в .wrangler/state
+
+cp .dev.vars.example .dev.vars
+# сложи GEMINI_API_KEY и SESSION_SECRET (виж стъпки 4 и 8)
+
+npm run dev                              # http://localhost:4321
+```
+
+Какво работи и какво не при това положение:
+
+| Работи | Не работи |
+| --- | --- |
+| Всички екрани, тетрадки, източници, бележки | Търсенето в източниците (иска Vectorize — стъпка 3) |
+| Регистрация с парола и вход | Влизане с Google (стъпка 5) |
+| Аудио преглед, мисловна карта | Писма — връзките се показват на екрана вместо да се пращат |
+| Плановете и лимитите | Плащане (стъпка 7) |
+
+Връзките за потвърждаване на имейл и за нова парола се връщат в самия отговор и
+се показват в интерфейса, докато няма настроен Resend. Това е нарочно, за да е
+ползваемо локално.
+
+---
+
+## 3. Cloudflare
+
+```bash
 npx wrangler login
 ```
 
-### D1
+### D1 — базата
 
 ```bash
 npx wrangler d1 create zapiski
@@ -43,17 +90,17 @@ npx wrangler d1 create zapiski
 `REPLACE_WITH_YOUR_D1_DATABASE_ID`, после създай таблиците:
 
 ```bash
-npm run db:migrate:local     # локалната база в .wrangler/state
-npm run db:migrate           # истинската база (--remote)
+npm run db:migrate:local     # локалната база
+npm run db:migrate           # истинската (--remote)
 ```
 
-### R2
+### R2 — файловете
 
 ```bash
 npx wrangler r2 bucket create zapiski-files
 ```
 
-### Vectorize
+### Vectorize — търсенето
 
 `gemini-embedding-001` се свива до 1536 измерения, защото това е таванът на
 Vectorize. Двата индекса по метаданни правят филтрирането по тетрадка и по
@@ -65,118 +112,295 @@ npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=note
 npx wrangler vectorize create-metadata-index zapiski-chunks --property-name=sourceId  --type=string
 ```
 
+> **Vectorize няма локален емулатор.** D1 и R2 се въртят локално в
+> `.wrangler/state`, но този binding работи само срещу истинския индекс.
+> За да работи търсенето, докато разработваш, разкоментирай `"remote": true`
+> в `wrangler.jsonc` (частта `vectorize`). Остава изключено по подразбиране,
+> защото с него `astro dev` отказва да стартира, докато не влезеш в
+> Cloudflare — а свеж клон трябва да се вдига само с `npm run dev`.
+
 Ако смениш `EMBED_MODEL` или размерността, индексът трябва да се пресъздаде —
 Vectorize не мени ширината на съществуващ индекс.
 
 ---
 
-## 3. Тайни
+## 4. Gemini API ключ
 
-За production:
+1. Отвори https://aistudio.google.com/apikey
+2. **Create API key** — избери или направи Google Cloud проект.
+3. Ключът започва с `AIza…`.
+
+Локално го слагаш в `.dev.vars`; за production:
 
 ```bash
 npx wrangler secret put GEMINI_API_KEY
-npx wrangler secret put SESSION_SECRET     # openssl rand -hex 32
 ```
 
-За локална работа направи `.dev.vars` (не влиза в git):
+Безплатният лимит на AI Studio е малък. За истинско ползване включи плащане в
+Google Cloud проекта, иначе ще получаваш „Достигнат е лимитът на Gemini API“.
 
-```bash
-cp .dev.vars.example .dev.vars
-$EDITOR .dev.vars
-```
-
-```ini
-GEMINI_API_KEY="AIza..."
-SESSION_SECRET="дълъг-случаен-низ"
-```
-
-Ако смениш `SESSION_SECRET` по-късно, старите бисквитки спират да важат и
-всички получават нови, празни профили. Данните в D1 остават, но стават
-недостъпни — сменяй го само нарочно.
+Всеки може и да си сложи **свой** ключ от Настройки — пази се в неговия браузър
+и се праща само с неговите заявки. Ако сървърът няма ключ, приложението работи
+само за хората, които са сложили свой.
 
 ---
 
-## 4. Локална работа
+## 5. Влизане с Google
+
+1. https://console.cloud.google.com → избери проект.
+2. **APIs & Services → OAuth consent screen**: тип **External**, попълни име на
+   приложението, имейл за поддръжка и лого. Добави си имейла в **Test users**,
+   докато приложението е в тестов режим.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
+   - Application type: **Web application**
+   - **Authorized redirect URIs** — добави и двата, точно така:
+     ```
+     http://localhost:4321/api/auth/google/callback
+     https://ТВОЯТ-ДОМЕЙН/api/auth/google/callback
+     ```
+4. Копирай Client ID и Client secret.
 
 ```bash
-npm run dev      # http://localhost:4321
+npx wrangler secret put GOOGLE_CLIENT_ID       # 123-abc.apps.googleusercontent.com
+npx wrangler secret put GOOGLE_CLIENT_SECRET   # GOCSPX-…
 ```
 
-D1 и R2 се въртят локално в `.wrangler/state`. **Vectorize няма локален
-емулатор** — в `wrangler.jsonc` е с `experimental_remote: true`, тоест dev
-сървърът пише в истинския индекс в акаунта ти. Затова `wrangler login` е нужен и
-за локална работа.
+Бутонът „Продължи с Google“ се появява сам, когато и двете са налични.
 
-Ако видиш `Binding VECTORIZE needs to be run remotely`, значи или не си влязъл,
-или индексът още не е създаден.
+Преди да пуснеш публично, мини през **Publishing status → Publish app**, иначе
+влизат само хората от Test users.
 
 ---
 
-## 5. Deploy
+## 6. Имейли
+
+Нужни са за две неща: потвърждаване на имейл и нова парола.
+
+1. https://resend.com → регистрация.
+2. **Domains → Add domain**: добави домейна си и сложи DNS записите (SPF, DKIM,
+   и DMARC, ако Resend го поиска). Без потвърден домейн може да пращаш само до
+   собствения си адрес.
+3. **API Keys → Create API key**.
 
 ```bash
-npm run deploy
+npx wrangler secret put RESEND_API_KEY
 ```
 
-Adapter-ът иска KV namespace за сесиите на Astro (binding `SESSION`) и Cloudflare
-го създава сам при първия deploy — няма какво да правиш.
+`EMAIL_FROM` се задава като променлива в `wrangler.jsonc` (`vars`) или като
+тайна — адресът трябва да е на потвърдения домейн:
+
+```
+EMAIL_FROM = "Записки <zdravey@tvoydomain.bg>"
+```
+
+Без `RESEND_API_KEY` профилите се създават, но остават непотвърдени, а „забравена
+парола“ не работи — връзките се показват в интерфейса вместо да се пращат.
 
 ---
 
-## 6. Настройки
+## 7. Абонаменти (Stripe)
 
-`vars` в `wrangler.jsonc`:
+### 7.1 Продукти и цени
+
+В https://dashboard.stripe.com (започни в **Test mode**) направи **два
+продукта**, всеки с **две** повтарящи се цени в **EUR**:
+
+| Продукт | Цена | Период | Променлива |
+| --- | --- | --- | --- |
+| Записки Плюс | 9,00 € | месечно | `STRIPE_PRICE_PLUS_MONTH` |
+| Записки Плюс | 90,00 € | годишно | `STRIPE_PRICE_PLUS_YEAR` |
+| Записки Про | 19,00 € | месечно | `STRIPE_PRICE_PRO_MONTH` |
+| Записки Про | 190,00 € | годишно | `STRIPE_PRICE_PRO_YEAR` |
+
+Всяка цена има ID от вида `price_1AbC…` — то отива в съответната променлива.
+
+> Сумите тук трябва да съвпадат с `src/lib/plans.ts`. Stripe взима парите по
+> price ID; страницата с цените показва числата от този файл. Разминат ли се,
+> ще показваш една цена, а ще таксуваш друга.
+
+### 7.2 Ключ
+
+**Developers → API keys → Secret key** (`sk_test_…`, а после `sk_live_…`):
+
+```bash
+npx wrangler secret put STRIPE_SECRET_KEY
+```
+
+### 7.3 Webhook
+
+Това е задължително: планът се вписва от webhook-а, не от връщането след
+плащане (браузърът може и да не стигне дотам).
+
+**Developers → Webhooks → Add endpoint**
+
+- URL: `https://ТВОЯТ-ДОМЕЙН/api/billing/webhook`
+- Събития:
+  - `checkout.session.completed`
+  - `customer.subscription.created`
+  - `customer.subscription.updated`
+  - `customer.subscription.deleted`
+
+Копирай **Signing secret** (`whsec_…`):
+
+```bash
+npx wrangler secret put STRIPE_WEBHOOK_SECRET
+```
+
+Локална проверка без публичен адрес:
+
+```bash
+stripe listen --forward-to localhost:4321/api/billing/webhook
+# сложи показания whsec_… в .dev.vars
+```
+
+### 7.4 Портал и данъци
+
+- **Settings → Billing → Customer portal**: включи го и разреши смяна на
+  абонамент и отказ. Бутонът „Плащане и фактури“ в Настройки води там.
+- **Settings → Tax**: приложението иска `automatic_tax`, така че включи Stripe
+  Tax и попълни данъчните си регистрации. Без това Stripe може да отхвърли
+  създаването на плащане.
+
+### 7.5 Пробен период (по избор)
+
+```
+STRIPE_TRIAL_DAYS = "14"
+```
+
+### 7.6 Като си готов за истински пари
+
+Смени `sk_test_…` на `sk_live_…`, направи цените и webhook-а **отново** в live
+режим (test и live са отделни светове) и обнови четирите `STRIPE_PRICE_*` и
+`STRIPE_WEBHOOK_SECRET`.
+
+---
+
+## 8. Тайни и променливи
+
+### Тайни (`wrangler secret put ИМЕ`)
+
+| Тайна | Задължителна | Откъде |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | да | aistudio.google.com/apikey |
+| `SESSION_SECRET` | да | `openssl rand -hex 32` |
+| `GOOGLE_CLIENT_ID` | не | Google Cloud → Credentials |
+| `GOOGLE_CLIENT_SECRET` | не | същото място |
+| `RESEND_API_KEY` | не | resend.com → API Keys |
+| `STRIPE_SECRET_KEY` | не | Stripe → API keys |
+| `STRIPE_WEBHOOK_SECRET` | не | Stripe → Webhooks |
+| `STRIPE_PRICE_PLUS_MONTH` | не | Stripe → цената |
+| `STRIPE_PRICE_PLUS_YEAR` | не | Stripe → цената |
+| `STRIPE_PRICE_PRO_MONTH` | не | Stripe → цената |
+| `STRIPE_PRICE_PRO_YEAR` | не | Stripe → цената |
+
+> Ако смениш `SESSION_SECRET`, всички сесии падат и всеки трябва да влезе
+> отново. Данните остават — сменяй го само нарочно.
+
+### Променливи (`vars` в `wrangler.jsonc`)
 
 | Променлива | По подразбиране | Какво прави |
 | --- | --- | --- |
-| `RAG_BACKEND` | `vectorize` | `vectorize` = собствен индекс; `gemini` = Google File Search |
-| `CHAT_MODEL` | `gemini-2.5-flash` | моделът за отговорите (сменя се и от Настройки) |
-| `EMBED_MODEL` | `gemini-embedding-001` | вграждания; смяната иска нов Vectorize индекс |
-| `TTS_MODEL` | `gemini-2.5-flash-preview-tts` | подкастът; трябва да поддържа multi-speaker |
-| `RESPONSE_LANGUAGE` | `bg` | език по подразбиране за новите профили |
+| `PUBLIC_SITE_URL` | адресът на заявката | Базата за връзките в писмата и за OAuth. **Задай го в production**, иначе писмата могат да сочат към грешен адрес. |
+| `EMAIL_FROM` | `onboarding@resend.dev` | Подател на писмата. |
+| `RAG_BACKEND` | `vectorize` | `vectorize` = собствен индекс; `gemini` = Google File Search. |
+| `CHAT_MODEL` | `gemini-2.5-flash` | Модел за отговорите. |
+| `EMBED_MODEL` | `gemini-embedding-001` | Вграждания; смяната иска нов Vectorize индекс. |
+| `TTS_MODEL` | `gemini-2.5-flash-preview-tts` | Подкастът; трябва да поддържа multi-speaker. |
+| `RESPONSE_LANGUAGE` | `bg` | Език по подразбиране за новите профили. |
+| `STRIPE_TRIAL_DAYS` | няма | Дни безплатен пробен период. |
 
-Незадължителни тайни:
-
-| Тайна | Какво прави |
-| --- | --- |
-| `GEMINI_BASE_URL` | друг адрес за Gemini API — за прокси или за тестове |
-
-### Собствен ключ от браузъра
-
-Екранът с настройки приема Gemini ключ, който се пази в `localStorage` и пътува
-само в хедъра `X-Gemini-Key` на заявките на този браузър. Ако сървърът има
-`GEMINI_API_KEY`, ключът от браузъра е по избор и има приоритет. Ако сървърът
-няма ключ, приложението работи само за хората, които са сложили свой.
+`GEMINI_BASE_URL` и `STRIPE_BASE_URL` съществуват само за тестове — насочват
+двете API-та към макет. Не ги задавай в production.
 
 ---
 
-## 7. Ако нещо не работи
+## 9. Пускане в production
+
+```bash
+npm run db:migrate          # таблиците в истинската база
+npm run deploy              # build + wrangler deploy
+```
+
+Adapter-ът иска KV namespace за сесиите на Astro (binding `SESSION`) и
+Cloudflare го създава сам при първия deploy.
+
+След това:
+
+1. Вземи адреса от изхода (`https://zapiski.ТВОЙ-ПОДДОМЕЙН.workers.dev`).
+2. Ако имаш домейн: Cloudflare → Workers & Pages → зададеното приложение →
+   **Settings → Domains & Routes → Add custom domain**.
+3. Задай `PUBLIC_SITE_URL` на крайния адрес.
+4. Добави `https://ТОЗИ-АДРЕС/api/auth/google/callback` в Google Credentials.
+5. Насочи Stripe webhook-а към `https://ТОЗИ-АДРЕС/api/billing/webhook`.
+
+---
+
+## 10. Проверка
+
+По ред, всяка стъпка отнема по-малко от минута:
+
+| # | Какво | Очаквано |
+| --- | --- | --- |
+| 1 | Отвори `/` | Лендингът се зарежда |
+| 2 | Отвори `/app` | „Здравей“ + лента „Работиш като гост“ |
+| 3 | „+ Нова тетрадка“, качи PDF | Източникът минава през „чета и индексирам…“ до брой страници |
+| 4 | Задай въпрос | Отговор с чипове „1 · име, стр. N“; клик показва пасажа |
+| 5 | Направи 4-та тетрадка | Отказ с „Безплатният план стига до 3 тетрадки“ |
+| 6 | „Направи профил“ | Тетрадките остават; ако Resend е настроен — идва писмо |
+| 7 | Отвори `/login` в друг браузър и влез | Тетрадките са там |
+| 8 | „Продължи с Google“ | Влиза и свързва същия имейл |
+| 9 | Студио → „Създай аудио преглед“ | Напредък, после плейър, който върти |
+| 10 | `/pricing` → „Вземи Плюс“ | Stripe Checkout; с тестова карта `4242 4242 4242 4242` |
+| 11 | Настройки | „Плюс“, тавани 25 тетрадки, брояч за месеца |
+| 12 | Настройки → „Плащане и фактури“ | Порталът на Stripe се отваря |
+
+Ако нещо от 1–5 не мине, проблемът е в Cloudflare или Gemini. 6–8 е Google или
+Resend. 10–12 е Stripe.
+
+---
+
+## 11. Ако нещо не работи
 
 | Съобщение | Причина |
 | --- | --- |
 | `Липсва SESSION_SECRET` | няма `.dev.vars` или тайната не е сложена |
-| `Липсва връзка към D1` | пуснато е без bindings, или `database_id` не е сменен |
-| `Binding VECTORIZE needs to be run remotely` | липсва `wrangler login` или индексът не съществува |
+| `Липсва връзка към D1` | пуснато без bindings, или `database_id` не е сменен |
+| `Binding VECTORIZE needs to be run remotely` | липсва `wrangler login`, индексът не съществува, или `"remote": true` е още коментирано |
+| `astro dev` не стартира | `"remote": true` е включено, но не си влязъл в Cloudflare |
 | `Няма Gemini API ключ` | няма нито сървърен ключ, нито ключ в Настройки |
+| `Достигнат е лимитът на Gemini API` | безплатният лимит на AI Studio; включи плащане в GCP |
 | `В PDF-а няма текстов слой` | сканиран документ; нужен е OCR преди качване |
-| `Достигнат е лимитът на Gemini API` | rate limit; клиентът вече опитва с изчакване |
-| Източник остава на `грешка при обработка` | точната причина е под името му в панела и в `wrangler tail` |
+| Източник остава на „грешка при обработка“ | точната причина е под името му и в `wrangler tail` |
+| `redirect_uri_mismatch` от Google | адресът в Credentials не съвпада точно, включително схема и порт |
+| Влизането с Google казва „изтече“ | бисквитката със `state` е изтекла (10 мин.) или са изтрити бисквитките |
+| Плащането минава, но планът е стар | webhook-ът не стига до сървъра. Провери Stripe → Webhooks → Recent deliveries |
+| `Липсва цена за plus/month` | съответната `STRIPE_PRICE_*` не е зададена |
+| Писма не идват | няма `RESEND_API_KEY`, или `EMAIL_FROM` не е на потвърден домейн |
 
----
+Логовете в реално време:
 
-## 8. Какво ползваме от Gemini API
+```bash
+npx wrangler tail
+```
 
-Всичко минава през `src/lib/gemini.ts`:
+### Поддръжка на базата
 
-| Възможност | Къде |
-| --- | --- |
-| `models/*:streamGenerateContent` | отговорите в чата, дума по дума |
-| `models/*:generateContent` | учебни материали, мисловна карта, име на тетрадка |
-| `models/*:batchEmbedContents` (с резервен `:embedContent`) | вграждане на пасажите и на въпроса |
-| `responseModalities: ["AUDIO"]` + `multiSpeakerVoiceConfig` | подкастът с двама водещи |
-| `fileData: { fileUri }` | запис на YouTube видео с времеви кодове |
-| `inlineData` (audio) | запис на качен аудио файл |
-| `fileSearchStores` + инструмент `fileSearch` | само при `RAG_BACKEND: "gemini"` |
+Гостите правят по един ред при първо отваряне на `/app`. Празните профили,
+които никога не са направили тетрадка, могат да се чистят:
 
-Ако Google промени нещо в тези адреси или полета, се пипа само този файл.
+```bash
+npx wrangler d1 execute zapiski --remote --command "
+  DELETE FROM users
+  WHERE is_anonymous = 1
+    AND created_at < strftime('%s','now','-30 days') * 1000
+    AND id NOT IN (SELECT DISTINCT user_id FROM notebooks)"
+```
+
+Изтеклите сесии и еднократните връзки също:
+
+```bash
+npx wrangler d1 execute zapiski --remote --command "
+  DELETE FROM sessions WHERE expires_at < strftime('%s','now') * 1000;
+  DELETE FROM email_tokens WHERE expires_at < strftime('%s','now') * 1000;
+  DELETE FROM rate_limits WHERE window_start < strftime('%s','now','-1 day') * 1000"
+```
