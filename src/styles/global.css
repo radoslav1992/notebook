@@ -1,0 +1,288 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   Everything visual routes through these two blocks, so restyling the app to a
+   different design means editing colours here — not hunting through components.
+   Light is the base; dark is applied for an explicit `data-theme="dark"` and
+   for system-dark unless the user has explicitly chosen light.
+--------------------------------------------------------------------------- */
+
+:root {
+  --c-canvas: #ffffff;
+  --c-surface: #f3f6fc;
+  --c-elevated: #ffffff;
+  --c-raised: #e9eef6;
+  --c-hover: #eef2f9;
+  --c-line: #d5dae1;
+  --c-line-strong: #b9c0c8;
+  --c-ink: #1f1f1f;
+  --c-muted: #444746;
+  --c-faint: #5f6368;
+  --c-accent: #0b57d0;
+  --c-accent-ink: #ffffff;
+  --c-accent-soft: #d3e3fd;
+  --c-accent-soft-ink: #041e49;
+  --c-danger: #b3261e;
+  --c-danger-soft: #fce8e6;
+  --c-shadow: 0 1px 2px rgb(60 64 67 / 0.16), 0 2px 6px 2px rgb(60 64 67 / 0.08);
+
+  --radius-panel: 1rem;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --c-canvas: #1b1b1b;
+    --c-surface: #232426;
+    --c-elevated: #1f2021;
+    --c-raised: #303134;
+    --c-hover: #2b2c2e;
+    --c-line: #3c4043;
+    --c-line-strong: #5f6368;
+    --c-ink: #e3e3e3;
+    --c-muted: #c4c7c5;
+    --c-faint: #9aa0a6;
+    --c-accent: #a8c7fa;
+    --c-accent-ink: #062e6f;
+    --c-accent-soft: #004a77;
+    --c-accent-soft-ink: #c2e7ff;
+    --c-danger: #f2b8b5;
+    --c-danger-soft: #4a1a17;
+    --c-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 6px 2px rgb(0 0 0 / 0.24);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --c-canvas: #1b1b1b;
+  --c-surface: #232426;
+  --c-elevated: #1f2021;
+  --c-raised: #303134;
+  --c-hover: #2b2c2e;
+  --c-line: #3c4043;
+  --c-line-strong: #5f6368;
+  --c-ink: #e3e3e3;
+  --c-muted: #c4c7c5;
+  --c-faint: #9aa0a6;
+  --c-accent: #a8c7fa;
+  --c-accent-ink: #062e6f;
+  --c-accent-soft: #004a77;
+  --c-accent-soft-ink: #c2e7ff;
+  --c-danger: #f2b8b5;
+  --c-danger-soft: #4a1a17;
+  --c-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 6px 2px rgb(0 0 0 / 0.24);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-elevated: var(--c-elevated);
+  --color-raised: var(--c-raised);
+  --color-hover: var(--c-hover);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-ink: var(--c-ink);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-ink: var(--c-accent-ink);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-accent-soft-ink: var(--c-accent-soft-ink);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+
+  --font-sans:
+    'Google Sans', 'Product Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    system-ui, sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ------------------------------- base styles ------------------------------ */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-canvas);
+  color: var(--c-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--c-line-strong);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------- components ------------------------------- */
+
+/* `btn` is registered as a utility, not a component class, because Tailwind v4
+   only lets `@apply` pull in utilities — and every button variant builds on it. */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full text-sm font-medium
+         transition-colors select-none cursor-pointer disabled:opacity-45
+         disabled:cursor-not-allowed whitespace-nowrap;
+}
+
+@layer components {
+  .panel {
+    @apply flex flex-col bg-surface border border-line rounded-2xl overflow-hidden min-h-0;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between gap-2 px-4 h-14 shrink-0;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-accent-ink px-5 h-10 hover:opacity-90;
+  }
+
+  .btn-tonal {
+    @apply btn bg-raised text-ink px-4 h-10 hover:bg-hover border border-transparent;
+  }
+
+  .btn-outline {
+    @apply btn border border-line text-ink px-4 h-10 bg-transparent hover:bg-hover;
+  }
+
+  .btn-ghost {
+    @apply btn text-muted px-3 h-9 hover:bg-hover hover:text-ink;
+  }
+
+  .btn-icon {
+    @apply btn text-muted size-9 rounded-full hover:bg-hover hover:text-ink shrink-0;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-elevated
+           px-3 h-8 text-xs text-muted hover:bg-hover transition-colors cursor-pointer;
+  }
+
+  .field {
+    @apply w-full rounded-xl border border-line bg-elevated px-3.5 py-2.5 text-sm text-ink
+           placeholder:text-faint outline-none focus:border-accent transition-colors;
+  }
+
+  .card {
+    @apply rounded-2xl border border-line bg-elevated;
+  }
+
+  /* Three-pane workspace. Column widths come from a `--cols` custom property
+     set inline, so collapsing a panel is a single style update. */
+  .app-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @media (min-width: 768px) {
+    .app-grid {
+      grid-template-columns: var(--cols);
+    }
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--c-raised) 25%, var(--c-hover) 50%, var(--c-raised) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.28s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 1.1s linear infinite;
+}
+
+/* Typography for generated markdown (chat answers, notes, artifacts). */
+.prose-nblm {
+  @apply text-[0.9375rem] leading-7 text-ink;
+}
+.prose-nblm h1 {
+  @apply text-xl font-medium mt-6 mb-3 first:mt-0;
+}
+.prose-nblm h2 {
+  @apply text-lg font-medium mt-6 mb-2 first:mt-0;
+}
+.prose-nblm h3 {
+  @apply text-base font-medium mt-5 mb-2 first:mt-0;
+}
+.prose-nblm p {
+  @apply my-3 first:mt-0 last:mb-0;
+}
+.prose-nblm ul {
+  @apply my-3 pl-5 list-disc space-y-1.5;
+}
+.prose-nblm ol {
+  @apply my-3 pl-5 list-decimal space-y-1.5;
+}
+.prose-nblm blockquote {
+  @apply my-3 border-l-2 border-line pl-4 text-muted italic;
+}
+.prose-nblm code {
+  @apply font-mono text-[0.85em] bg-raised rounded px-1.5 py-0.5;
+}
+.prose-nblm pre {
+  @apply my-3 bg-raised rounded-xl p-3.5 overflow-x-auto;
+}
+.prose-nblm pre code {
+  @apply bg-transparent p-0;
+}
+.prose-nblm hr {
+  @apply my-5 border-line;
+}
+.prose-nblm strong {
+  @apply font-semibold;
+}
+.prose-nblm a {
+  @apply text-accent underline underline-offset-2;
+}

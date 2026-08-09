@@ -1,0 +1,44 @@
+---
+interface Props {
+  message: string;
+}
+const { message } = Astro.props;
+---
+
+<div class="mx-auto flex min-h-[100dvh] max-w-2xl flex-col justify-center px-6 py-16">
+  <h1 class="text-2xl font-medium">Almost there</h1>
+  <p class="mt-3 rounded-2xl bg-danger-soft px-4 py-3 text-sm text-danger">{message}</p>
+
+  <ol class="mt-8 space-y-4 text-sm text-muted">
+    <li>
+      <strong class="text-ink">1. Create the Cloudflare resources</strong>
+      <pre
+        class="mt-2 overflow-x-auto rounded-xl bg-raised p-3 font-mono text-xs"><code>npx wrangler d1 create notebooklm
+npx wrangler r2 bucket create notebooklm-media
+npx wrangler kv namespace create SESSION</code></pre>
+      Paste the returned ids into <code class="rounded bg-raised px-1.5 py-0.5">wrangler.jsonc</code>.
+    </li>
+    <li>
+      <strong class="text-ink">2. Apply the database migrations</strong>
+      <pre
+        class="mt-2 overflow-x-auto rounded-xl bg-raised p-3 font-mono text-xs"><code>npm run db:local    # for `astro dev`
+npm run db:remote   # for the deployed Worker</code></pre>
+    </li>
+    <li>
+      <strong class="text-ink">3. Provide the secrets</strong>
+      <pre
+        class="mt-2 overflow-x-auto rounded-xl bg-raised p-3 font-mono text-xs"><code>cp .dev.vars.example .dev.vars   # then fill in GEMINI_API_KEY and SESSION_SECRET
+
+# production
+npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put SESSION_SECRET</code></pre>
+      Get a Gemini key at
+      <a class="text-accent underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+        aistudio.google.com/apikey</a>.
+    </li>
+  </ol>
+
+  <p class="mt-8 text-xs text-faint">
+    Full instructions are in <code class="rounded bg-raised px-1.5 py-0.5">README.md</code>.
+  </p>
+</div>

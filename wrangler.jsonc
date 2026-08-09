@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "notebooklm-clone",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Metadata: notebooks, sources, chat messages, notes, audio jobs.
+  // Create with:  wrangler d1 create notebooklm    then paste the id below.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "notebooklm",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Raw uploaded source files + generated Audio Overview .wav files.
+  // Create with:  wrangler r2 bucket create notebooklm-media
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "notebooklm-media"
+    }
+  ],
+
+  // Used by Astro's session driver (auto-provisioned on deploy if omitted).
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+
+  "vars": {
+    // Override any of these without touching code.
+    "GEMINI_CHAT_MODEL": "gemini-2.5-flash",
+    "GEMINI_TTS_MODEL": "gemini-2.5-flash-preview-tts"
+  }
+
+  // Secrets (do NOT put these here — use `wrangler secret put`):
+  //   GEMINI_API_KEY   required
+  //   SESSION_SECRET   required, any long random string
+}

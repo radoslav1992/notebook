@@ -1,0 +1,13 @@
+# Copy to `.dev.vars` for local development (`astro dev` / `wrangler dev`).
+# In production set these with `wrangler secret put <NAME>`.
+
+# Google AI Studio key — https://aistudio.google.com/apikey
+# Powers File Search (RAG), chat generation, and TTS.
+GEMINI_API_KEY="your-gemini-api-key"
+
+# Any long random string. Signs the anonymous owner cookie.
+SESSION_SECRET="change-me-to-a-long-random-string"
+
+# Optional overrides
+GEMINI_CHAT_MODEL="gemini-2.5-flash"
+GEMINI_TTS_MODEL="gemini-2.5-flash-preview-tts"
