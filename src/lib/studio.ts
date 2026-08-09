@@ -17,9 +17,20 @@ import type { Mindmap, Note, Source } from './types';
 
 const SAMPLE_RATE = 24_000;
 
-/** Таван на сценария в токени за исканата дължина. */
+/**
+ * Таван на сценария в токени.
+ *
+ * Върви с исканата дължина, защото изходните токени се генерират серийно —
+ * таванът е и таван на времето, а цялата задача живее в едно изпълнение на
+ * worker-а. Но не бива да е стегнат: при моделите от 2.5 нагоре токените за
+ * мислене се броят в същия таван, тоест 1500 стигат моделът да „помисли“ и да
+ * върне празен текст. Оттам идваше „Сценарият излезе твърде кратък“.
+ *
+ * Двуминутен сценарий е ~300 думи (под 1000 токена изход), а останалото е
+ * запас за мисленето.
+ */
 export function scriptTokenBudget(minutes: number): number {
-  return Math.min(8000, Math.max(1500, Math.round(minutes * 500)));
+  return Math.min(12_000, Math.max(6000, Math.round(minutes * 1200)));
 }
 
 /* ── Учебни материали ────────────────────────────────────────────────────── */
@@ -121,16 +132,20 @@ export async function generateAudioOverview(
       ctx.language,
       minutes,
     )}`,
-    // Таванът върви с дължината, а не фиксирани 16 000. Изходните токени се
-    // генерират един по един, тоест таванът е и таван на времето: с 16 000
-    // моделът може да пише минути, а цялата задача живее в едно изпълнение на
-    // worker-а. ~150 думи на минута, с широк запас за кирилица.
     config: { temperature: 0.85, maxOutputTokens: scriptTokenBudget(minutes) },
   });
 
   const turns = parseTurns(script);
   if (turns.length < 4) {
-    throw new AiError(502, 'Сценарият излезе твърде кратък. Опитай пак.');
+    // „Твърде кратък“ не казва нищо на никого. Трите случая се различават и
+    // искат различно действие, затова се различават и в текста.
+    console.error('[zapiski:studio] сценарият не се разчете', {
+      chars: script.length,
+      turns: turns.length,
+      budget: scriptTokenBudget(minutes),
+      script: script.slice(0, 600),
+    });
+    throw new AiError(502, describeShortScript(script, turns.length));
   }
 
   const segments = groupTurns(turns);
@@ -198,6 +213,22 @@ export async function generateAudioOverview(
   });
 
   return { r2Key, durationS, script };
+}
+
+/**
+ * Защо сценарият не става за озвучаване. Изнесено, защото трите случая водят до
+ * различни неща: празен отговор е таван или отказ на модела, а неразчетен —
+ * формат, който `parseTurns` не познава.
+ */
+function describeShortScript(script: string, turns: number): string {
+  const clean = script.trim();
+  if (clean.length === 0) {
+    return 'Моделът не върна сценарий. Най-често значи, че целият таван за изхода е отишъл в „мислене“ — вдигни maxOutputTokens в scriptTokenBudget или пробвай друг CHAT_MODEL.';
+  }
+  if (turns === 0) {
+    return `Моделът върна ${clean.length} знака, но нито един ред във формата „${HOSTS.a.name}: …“. Пробвай пак; ако се повтаря, моделът не спазва формата и трябва друг CHAT_MODEL.`;
+  }
+  return `Сценарият излезе само ${turns} реплики (${clean.length} знака) — твърде кратък за преглед. Опитай пак.`;
 }
 
 /* ── Сценарий → сегменти за TTS ──────────────────────────────────────────── */

@@ -46,12 +46,22 @@ t('the window is long enough for one slow script generation', () => {
 
 console.log('\nscript budget');
 
-t('the token cap tracks the requested length instead of a flat 16k', () => {
+t('the token cap grows with length but stays bounded', () => {
   // Изходните токени се генерират серийно, тоест таванът е и таван на времето.
-  assert.ok(scriptTokenBudget(3) < scriptTokenBudget(12));
-  assert.ok(scriptTokenBudget(12) <= 8000, 'таванът не бива да расте без граница');
-  assert.ok(scriptTokenBudget(3) >= 1500, 'но и да не задушава кратък подкаст');
-  assert.ok(scriptTokenBudget(8) < 16_000, 'старата стойност беше 16 000');
+  assert.ok(scriptTokenBudget(2) < scriptTokenBudget(12));
+  assert.ok(scriptTokenBudget(12) <= 12_000, 'таванът не бива да расте без граница');
+  assert.ok(scriptTokenBudget(8) < 16_000, 'старата стойност беше фиксирани 16 000');
+});
+
+t('even the shortest podcast gets room for the model to think', () => {
+  // При моделите от 2.5 нагоре токените за мислене се броят в maxOutputTokens.
+  // Стегнат таван значи празен отговор, а не кратък — точно това чупеше
+  // двуминутния преглед, докато стойността беше 1500.
+  assert.ok(
+    scriptTokenBudget(1) >= 6000,
+    `${scriptTokenBudget(1)} е твърде малко: мисленето изяжда тавана и текстът излиза празен`,
+  );
+  assert.ok(scriptTokenBudget(2) >= 6000, String(scriptTokenBudget(2)));
 });
 
 console.log('\n' + pass + ' checks passed');
