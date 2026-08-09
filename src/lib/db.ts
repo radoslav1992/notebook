@@ -557,6 +557,7 @@ interface JobRow {
   r2_key: string | null;
   duration_s: number;
   error: string | null;
+  updated_at: number;
 }
 
 function toJob(r: JobRow): StudioJob {
@@ -568,8 +569,34 @@ function toJob(r: JobRow): StudioJob {
     progress: r.progress,
     durationS: r.duration_s,
     error: r.error,
+    updatedAt: r.updated_at,
     result: r.result_json ? safeParse(r.result_json) : undefined,
   };
+}
+
+/**
+ * Колко време без нито един запис значи, че задачата е умряла.
+ *
+ * Фоновата работа живее в `waitUntil` на една заявка. Ако Cloudflare прекрати
+ * изолата (дълга задача, разгръщане, срив), обещанието не се изпълнява и никой
+ * не пише „error“ — редът остава „running“ завинаги, а интерфейсът върти
+ * безкрайно. Всяка стъпка обновява `updated_at`, така че липсата на записи е
+ * единственият признак, по който това се разпознава отвън.
+ */
+export const JOB_STALE_MS = 3 * 60_000;
+
+export function isJobStale(job: StudioJob, atMs = Date.now()): boolean {
+  if (job.status !== 'running' && job.status !== 'queued') return false;
+  if (!job.updatedAt) return false;
+  return atMs - job.updatedAt > JOB_STALE_MS;
+}
+
+/** Отписва замряла задача, за да не блокира следващите опити. */
+export async function failStaleJob(db: D1Database, job: StudioJob): Promise<StudioJob> {
+  const error =
+    'Генерирането прекъсна, преди да завърши. Дългите аудио прегледи понякога не се вместват в едно изпълнение — опитай пак, по възможност с по-кратка дължина.';
+  await updateJob(db, job.id, { status: 'error', step: '', error });
+  return { ...job, status: 'error', step: '', error };
 }
 
 export async function createJob(
@@ -636,7 +663,7 @@ export async function getJob(
 ): Promise<StudioJob | null> {
   const row = await db
     .prepare(
-      `SELECT id, kind, status, step, progress, result_json, r2_key, duration_s, error
+      `SELECT id, kind, status, step, progress, result_json, r2_key, duration_s, error, updated_at
        FROM studio_jobs WHERE id = ? AND notebook_id = ?`,
     )
     .bind(id, notebookId)
@@ -654,7 +681,7 @@ export async function getLatestJob(
 ): Promise<StudioJob | null> {
   const row = await db
     .prepare(
-      `SELECT id, kind, status, step, progress, result_json, r2_key, duration_s, error
+      `SELECT id, kind, status, step, progress, result_json, r2_key, duration_s, error, updated_at
        FROM studio_jobs WHERE notebook_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 1`,
     )
     .bind(notebookId, kind)

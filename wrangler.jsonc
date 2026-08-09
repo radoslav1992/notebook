@@ -13,6 +13,12 @@
     "enabled": true
   },
 
+  // The audio overview decodes and concatenates tens of MB of PCM, then writes a
+  // WAV — real CPU, well past the 30s default. Paid plans allow up to 300000.
+  "limits": {
+    "cpu_ms": 120000
+  },
+
   // ── D1: notebooks, sources, chunks, messages, notes, studio jobs ──────────
   // No database_id on purpose: wrangler finds or creates the database named
   // below on `wrangler deploy`, so deploying straight from GitHub works with

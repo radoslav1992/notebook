@@ -9,7 +9,7 @@ import {
   requireNotebook,
   selectedSources,
 } from '~/lib/api';
-import { HttpError, createJob, getLatestJob, updateJob } from '~/lib/db';
+import { HttpError, createJob, failStaleJob, getLatestJob, isJobStale, updateJob } from '~/lib/db';
 import { assertCanMakeAudio, countAudio, getEntitlement } from '~/lib/limits';
 import { generateAudioOverview } from '~/lib/studio';
 
@@ -33,7 +33,13 @@ export const POST: APIRoute = handler(async (ctx) => {
 
   const existing = await getLatestJob(env.DB, id, 'audio');
   if (existing && (existing.status === 'queued' || existing.status === 'running')) {
-    return json({ job: existing, alreadyRunning: true });
+    // Задача, чиято изолата е била прекратена, остава „running“ завинаги и без
+    // това щеше да блокира всеки следващ опит. Отписваме я и продължаваме.
+    if (isJobStale(existing)) {
+      await failStaleJob(env.DB, existing);
+    } else {
+      return json({ job: existing, alreadyRunning: true });
+    }
   }
 
   await assertCanMakeAudio(env.DB, ctx.locals.user.id);

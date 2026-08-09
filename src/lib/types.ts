@@ -80,6 +80,8 @@ export interface StudioJob {
   progress: number;
   durationS: number;
   error: string | null;
+  /** Кога задачата за последно е отчела напредък — по това се хваща замряла. */
+  updatedAt?: number;
   audioUrl?: string;
   result?: unknown;
 }

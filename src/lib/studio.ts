@@ -17,6 +17,11 @@ import type { Mindmap, Note, Source } from './types';
 
 const SAMPLE_RATE = 24_000;
 
+/** Таван на сценария в токени за исканата дължина. */
+export function scriptTokenBudget(minutes: number): number {
+  return Math.min(8000, Math.max(1500, Math.round(minutes * 500)));
+}
+
 /* ── Учебни материали ────────────────────────────────────────────────────── */
 
 export async function generateStudioNote(
@@ -113,7 +118,11 @@ export async function generateAudioOverview(
       ctx.language,
       minutes,
     )}`,
-    config: { temperature: 0.85, maxOutputTokens: 16_000 },
+    // Таванът върви с дължината, а не фиксирани 16 000. Изходните токени се
+    // генерират един по един, тоест таванът е и таван на времето: с 16 000
+    // моделът може да пише минути, а цялата задача живее в едно изпълнение на
+    // worker-а. ~150 думи на минута, с широк запас за кирилица.
+    config: { temperature: 0.85, maxOutputTokens: scriptTokenBudget(minutes) },
   });
 
   const turns = parseTurns(script);
