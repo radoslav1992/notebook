@@ -8,6 +8,7 @@ const { modelChoices, resolveChatModel, labelFor, FALLBACK_CHAT_MODEL } = await 
 );
 const { CloudflareAi } = await import('../src/lib/ai/cloudflare.ts');
 const { buildAi } = await import('../src/lib/ai/index.ts');
+const { googleTts } = await import('../src/lib/ai/google.ts');
 const { AiError } = await import('../src/lib/ai/error.ts');
 
 let pass = 0;
@@ -241,6 +242,77 @@ await at('Cloudflare`s own TTS models refuse, because none of them speaks Bulgar
     const cf = new CloudflareAi({ ai: stubAi(null), model });
     await assert.rejects(() => cf.speak({ text: 'Здравей' }), /google\/gemini-3.1-flash-tts/);
   }
+});
+
+/* ── непознат TTS модел ───────────────────────────────────────────────────── */
+
+console.log('\nunknown tts model');
+
+/** Колкото от `Gemini` ползва googleTts. */
+function fakeGemini({ ttsModel, speakError, models }) {
+  return {
+    ttsModel,
+    speak: () => Promise.reject(speakError),
+    listModels: () =>
+      models instanceof Error ? Promise.reject(models) : Promise.resolve(models),
+  };
+}
+
+await at('a missing TTS model comes back listing the ones the key accepts', async () => {
+  // Точният отговор на Google за име, взето от блог вместо от ListModels.
+  const notFound = new AiError(
+    404,
+    'Моделът не съществува или не е достъпен за този ключ. Google отговори: models/gemini-3.1-flash-tts is not found for API version v1beta',
+  );
+  const tts = googleTts(
+    fakeGemini({
+      ttsModel: 'gemini-3.1-flash-tts',
+      speakError: notFound,
+      models: [
+        { id: 'gemini-3.6-flash', displayName: '', description: '', methods: ['generateContent'] },
+        { id: 'gemini-2.5-flash-preview-tts', displayName: '', description: '', methods: ['generateContent'] },
+        { id: 'gemini-3.1-flash-tts-preview', displayName: '', description: '', methods: ['generateContent'] },
+      ],
+    }),
+  );
+
+  const err = await tts.speak({ text: 'Здравей' }).then(() => null, (e) => e);
+  assert.ok(err instanceof AiError, 'остава AiError, за да стигне преведена');
+  assert.match(err.message, /TTS_MODEL/);
+  assert.match(err.message, /gemini-2.5-flash-preview-tts/);
+  assert.match(err.message, /gemini-3.1-flash-tts-preview/);
+  // Само TTS моделите, иначе списъкът е безполезен.
+  assert.ok(!err.message.includes('gemini-3.6-flash'), err.message);
+});
+
+await at('a key with no speech model at all says exactly that', async () => {
+  const tts = googleTts(
+    fakeGemini({
+      ttsModel: 'gemini-2.5-flash-preview-tts',
+      speakError: new AiError(404, 'model is not found'),
+      models: [{ id: 'gemini-3.6-flash', displayName: '', description: '', methods: ['generateContent'] }],
+    }),
+  );
+  const err = await tts.speak({ text: 'x' }).then(() => null, (e) => e);
+  assert.match(err.message, /нито един TTS модел/);
+});
+
+await at('errors that are not about a missing model pass through untouched', async () => {
+  const quota = new AiError(429, 'Достигнат е лимитът на Gemini API. Опитай пак след малко.');
+  const tts = googleTts(
+    fakeGemini({ ttsModel: 'x', speakError: quota, models: new Error('да не се вика') }),
+  );
+  const err = await tts.speak({ text: 'x' }).then(() => null, (e) => e);
+  assert.equal(err, quota, 'не бива да се пипа, нито да се пита за списък');
+});
+
+await at('a failing model list leaves the original error, not one about the list', async () => {
+  const notFound = new AiError(404, 'model is not found');
+  const tts = googleTts(
+    fakeGemini({ ttsModel: 'x', speakError: notFound, models: new Error('ListModels падна') }),
+  );
+  const err = await tts.speak({ text: 'x' }).then(() => null, (e) => e);
+  assert.equal(err, notFound);
 });
 
 /* ── стрийминг ────────────────────────────────────────────────────────────── */

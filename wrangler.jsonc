@@ -100,7 +100,10 @@
     // here reaches users as a broken model picker; add yours from /api/models:
     //   "CHAT_MODEL_PRO": "gemini-3.1-pro",
     "EMBED_MODEL": "gemini-embedding-001",
-    "TTS_MODEL": "gemini-3.1-flash-tts",
+    // Проверено име. По-новите TTS модели носят суфикс „-preview“
+    // (`gemini-3.1-flash-tts-preview`), затова се вземат от /api/models, а не от
+    // блогове. Ако сложиш несъществуващ, грешката изброява приетите.
+    "TTS_MODEL": "gemini-2.5-flash-preview-tts",
 
     // Vector width. Derived from EMBED_MODEL (see ai/select.ts); set only if a
     // model is missing from that table. Must match the Vectorize index.
