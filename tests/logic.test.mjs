@@ -160,6 +160,18 @@ t('quota and unknown-model cases do not fall through to English', () => {
   assert.ok(bg(translateGoogleError(429, 'Quota exceeded for quota metric')));
   assert.ok(translateGoogleError(404, 'models/gemini-9 is not found').includes('CHAT_MODEL'));
 });
+t('a model retired for new keys says where to change it and why not the dashboard', () => {
+  // Точният текст от Google, след като 2.5 беше изтеглен за нови ключове.
+  const out = translateGoogleError(
+    400,
+    'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use a newer model for the latest features and improvements.',
+  );
+  assert.ok(bg(out), out);
+  assert.ok(out.includes('wrangler.jsonc'), 'трябва да каже КЪДЕ се сменя');
+  assert.ok(out.includes('/api/models'), 'и как се разбира кой модел работи');
+  // Оригиналът остава в края: името на изтегления модел е в него.
+  assert.ok(out.includes('gemini-2.5-flash'), out);
+});
 t('an unrecognised message is passed through rather than swallowed', () => {
   assert.equal(translateGoogleError(400, 'Something entirely new'), 'Something entirely new');
 });

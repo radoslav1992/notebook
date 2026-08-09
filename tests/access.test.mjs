@@ -18,6 +18,9 @@ t('the app and everything it writes through needs an account', () => {
     '/api/notebooks/nb_123/chat',
     '/api/settings',
     '/api/me',
+    // Прави заявка към Google при всяко отваряне — отворен, той е безплатен
+    // начин някой да хаби квотата на инсталацията.
+    '/api/models',
   ]) {
     assert.equal(classifyRoute(p), 'guarded', p);
   }

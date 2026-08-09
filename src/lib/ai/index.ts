@@ -19,6 +19,7 @@ import type { ChatModel, EmbedModel, SpeechModel } from './types';
 
 export { AiError } from './error';
 export type { AiBinding } from './cloudflare';
+export * from './defaults';
 export * from './select';
 export * from './choices';
 export type * from './types';
