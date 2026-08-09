@@ -1,0 +1,66 @@
+---
+import { env } from 'cloudflare:workers';
+import Auth from '../layouts/Auth.astro';
+import { consumeEmailToken, markEmailVerified, startSession } from '../lib/auth';
+import { sessionSecret } from '../lib/authApi';
+
+export const prerender = false;
+
+/**
+ * Потвърждаване на имейл направо от връзката в писмото.
+ *
+ * Върши се на сървъра, защото човекът идва от пощата с обикновено отваряне на
+ * адрес — няма кой да направи POST заявка.
+ */
+const token = Astro.url.searchParams.get('token') ?? '';
+let ok = false;
+
+if (token) {
+  const claim = await consumeEmailToken(env.DB, token, 'verify');
+  if (claim) {
+    await markEmailVerified(env.DB, claim.userId);
+    const { cookie } = await startSession(
+      Astro.request,
+      env.DB,
+      sessionSecret(),
+      claim.userId,
+    );
+    Astro.response.headers.append('set-cookie', cookie);
+    ok = true;
+  }
+}
+---
+
+<Auth title={ok ? 'Имейлът е потвърден — Записки' : 'Връзката не важи — Записки'}>
+  <div class="auth-card">
+    {
+      ok ? (
+        <>
+          <h1>Готово</h1>
+          <p class="sub">
+            Имейлът е потвърден и вече си влязъл. Тетрадките ти са на едно място и се отварят от
+            всяко устройство.
+          </p>
+          <a class="btn btn-primary auth-submit" style="display:block;text-align:center" href="/app">
+            Към тетрадките
+          </a>
+        </>
+      ) : (
+        <>
+          <h1>Връзката не важи</h1>
+          <p class="sub">
+            Връзката за потвърждаване е изтекла или вече е използвана. Влез в профила си и поискай
+            нова от Настройки.
+          </p>
+          <a
+            class="btn btn-primary auth-submit"
+            style="display:block;text-align:center"
+            href="/login"
+          >
+            Към входа
+          </a>
+        </>
+      )
+    }
+  </div>
+</Auth>

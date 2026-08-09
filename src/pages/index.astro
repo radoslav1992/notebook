@@ -1,0 +1,575 @@
+---
+import Base from '../layouts/Base.astro';
+
+export const prerender = false;
+
+const features = [
+  {
+    title: 'Отговори с препратка',
+    body: 'Всяко твърдение носи цитат към страницата и абзаца. Кликваш и виждаш оригинала — проверката отнема секунда.',
+  },
+  {
+    title: 'Аудио преглед',
+    body: 'Двама водещи обсъждат материала ти на разговорен български. Слушаш в колата вместо да четеш 200 страници.',
+  },
+  {
+    title: 'Учебни материали наготово',
+    body: 'Ръководство за учене, хронология, въпроси за изпит и мисловна карта — генерирани само от твоите източници.',
+  },
+];
+
+const steps = [
+  {
+    n: '01',
+    title: 'Качваш източници',
+    body: 'PDF, Word, уеб страници, YouTube, аудио или собствен текст. До 50 в тетрадка.',
+  },
+  {
+    n: '02',
+    title: 'Питаш',
+    body: 'На български, с твоите думи. Избираш кои източници да участват в отговора.',
+  },
+  {
+    n: '03',
+    title: 'Превръщаш в материал',
+    body: 'Бележка, отчет, подкаст или карта на темите. Всичко остава в тетрадката.',
+  },
+];
+---
+
+<Base title="Записки — питай собствените си документи">
+  <div class="page">
+    <div class="topbar">
+      <a class="brand" href="/">
+        <span class="mark">З</span>
+        <span class="name">Записки</span>
+      </a>
+      <div class="spacer"></div>
+      <nav class="links">
+        <a href="#kak">Как работи</a>
+        <a href="/pricing">Цени</a>
+        <a href="#uni">За университети</a>
+      </nav>
+      <a class="btn btn-primary enter" href="/app">Отвори Записки</a>
+    </div>
+
+    <section class="hero">
+      <div>
+        <div class="badge">Работи на български</div>
+        <h1>Питай собствените си документи</h1>
+        <p class="lede">
+          Качваш лекции, PDF-и, линкове и бележки. Записки чете само тях и отговаря с препратка към
+          точното място в източника. Без измислени факти, без ровене из папки.
+        </p>
+        <div class="cta">
+          <a class="btn btn-primary big" href="/app">Започни безплатно</a>
+          <a class="btn btn-ghost big" href="#kak">Как работи</a>
+        </div>
+        <div class="fineprint">Инсталира се като приложение · работи и офлайн</div>
+      </div>
+
+      <div class="preview">
+        <div class="preview-row">
+          <div class="preview-sources">
+            <div class="eyebrow">Източници</div>
+            <div class="src"><span class="tag">PDF</span><span class="src-name">Зелена сделка</span></div>
+            <div class="src"><span class="tag">WEB</span><span class="src-name">ec.europa.eu</span></div>
+            <div class="src"><span class="tag">DOC</span><span class="src-name">Лекция 4</span></div>
+          </div>
+          <div class="preview-chat">
+            <div class="bubble-user">Кои са противоречията между източниците?</div>
+            <div class="bubble-ai">
+              Планът за преход посочва 2038 г. за затваряне на лигнитните мощности, а лекцията говори
+              за 2035 г. Двата документа не съвпадат и по заместващия капацитет.
+              <div class="cites">
+                <span class="chip">1 · стр. 12</span>
+                <span class="chip">3 · стр. 5</span>
+              </div>
+            </div>
+            <div class="composer">
+              <span>Питай нещо…</span>
+              <span class="send">→</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="kak">
+      <h2>Три неща, които спестяват часове</h2>
+      <div class="features">
+        {
+          features.map((f) => (
+            <article class="card feature">
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="block steps-block">
+      <div class="steps">
+        {
+          steps.map((s) => (
+            <div>
+              <div class="step-n">{s.n}</div>
+              <div class="step-title">{s.title}</div>
+              <div class="step-body">{s.body}</div>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="block closing">
+      <div class="banner" id="uni">
+        <h2 class="banner-title">Сложи документите си на работа</h2>
+        <p class="banner-body">
+          Безплатно за първите три тетрадки. Инсталира се на телефона и работния плот като обикновено
+          приложение.
+        </p>
+        <a class="btn banner-btn" href="/app">Отвори Записки</a>
+      </div>
+      <footer class="footer">
+        <div class="footer-brand">Записки</div>
+        <div class="spacer"></div>
+        <span>Поверителност</span>
+        <span>Условия</span>
+        <span>Контакт</span>
+        <span>© 2026</span>
+      </footer>
+    </section>
+  </div>
+</Base>
+
+<style>
+  .page {
+    min-height: 100vh;
+  }
+
+  .topbar {
+    height: 74px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 34px;
+    max-width: var(--page-max);
+    margin: 0 auto;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: var(--ink);
+  }
+  .brand:hover {
+    color: var(--ink);
+  }
+  .mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: var(--brand);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bg);
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .name {
+    font-family: var(--font-serif);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .spacer {
+    flex: 1;
+  }
+
+  .links {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .links a {
+    color: var(--muted);
+  }
+  .links a:hover {
+    color: var(--brand);
+  }
+
+  .enter {
+    margin-left: 26px;
+    font-size: 13.5px;
+    padding: 10px 20px;
+  }
+
+  /* ── Герой ─────────────────────────────────────────────────────────────── */
+
+  .hero {
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 56px 34px 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+    align-items: center;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--brand);
+    background: var(--brand-tint);
+    padding: 6px 13px;
+    border-radius: var(--r-pill);
+    margin-bottom: 22px;
+  }
+
+  h1 {
+    font-family: var(--font-serif);
+    font-size: 56px;
+    line-height: 1.06;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+
+  .lede {
+    font-size: 16.5px;
+    line-height: 1.65;
+    color: var(--muted);
+    max-width: 46ch;
+    margin: 0 0 30px;
+    text-wrap: pretty;
+  }
+
+  .cta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .big {
+    font-size: 15px;
+    padding: 14px 26px;
+  }
+  .btn-ghost.big {
+    padding: 14px 24px;
+  }
+
+  .fineprint {
+    font-size: 12.5px;
+    color: var(--faint);
+    margin-top: 16px;
+  }
+
+  /* ── Макет на приложението ─────────────────────────────────────────────── */
+
+  .preview {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-3xl);
+    padding: 20px;
+    box-shadow: var(--shadow-card);
+  }
+  .preview-row {
+    display: flex;
+    gap: 14px;
+  }
+  .preview-sources {
+    width: 34%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-bottom: 2px;
+  }
+  .src {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    border-radius: 9px;
+    padding: 8px;
+  }
+  .tag {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: var(--brand-tint);
+    color: var(--brand);
+    font-size: 8.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .src-name {
+    font-size: 11.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preview-chat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bubble-user {
+    align-self: flex-end;
+    background: var(--brand);
+    color: var(--bg);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 9px 12px;
+    border-radius: var(--r-lg);
+    max-width: 86%;
+  }
+  .bubble-ai {
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 10px 12px;
+    border-radius: var(--r-lg);
+    text-wrap: pretty;
+  }
+  .cites {
+    display: flex;
+    gap: 5px;
+    margin-top: 9px;
+    padding-top: 8px;
+    border-top: 1px solid #e8e1d6;
+  }
+  .chip {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--brand);
+    background: var(--brand-tint);
+    padding: 3px 8px;
+    border-radius: var(--r-pill);
+  }
+  .composer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-pill);
+    padding: 7px 8px 7px 14px;
+    margin-top: auto;
+    font-size: 11.5px;
+    color: var(--faint);
+  }
+  .composer span:first-child {
+    flex: 1;
+  }
+  .send {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--r-pill);
+    background: var(--brand);
+    color: var(--bg);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Блокове ───────────────────────────────────────────────────────────── */
+
+  .block {
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 88px 34px 0;
+  }
+
+  h2 {
+    font-family: var(--font-serif);
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 36px;
+  }
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 18px;
+  }
+  .feature {
+    padding: 26px;
+  }
+  .feature h3 {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 9px;
+  }
+  .feature p {
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--muted);
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  .steps-block {
+    padding-top: 78px;
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 34px;
+    border-top: 1px solid var(--line);
+    padding-top: 40px;
+  }
+  .step-n {
+    font-family: var(--font-serif);
+    font-size: 30px;
+    color: var(--brand);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .step-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .step-body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+
+  .closing {
+    padding: 78px 34px 90px;
+  }
+  .banner {
+    background: var(--brand);
+    border-radius: var(--r-4xl);
+    padding: 56px 44px;
+    text-align: center;
+    color: var(--bg);
+  }
+  .banner-title {
+    font-family: var(--font-serif);
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .banner-body {
+    font-size: 15px;
+    line-height: 1.6;
+    opacity: 0.82;
+    max-width: 48ch;
+    margin: 0 auto 28px;
+    text-wrap: pretty;
+  }
+  .banner-btn {
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    background: var(--bg);
+    color: var(--brand);
+    display: inline-block;
+  }
+  .banner-btn:hover {
+    background: #fff;
+    color: var(--brand);
+  }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding-top: 34px;
+    font-size: 12.5px;
+    color: var(--faint);
+    flex-wrap: wrap;
+  }
+  .footer-brand {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  /* ── Дребни екрани ─────────────────────────────────────────────────────── */
+
+  @media (max-width: 900px) {
+    .hero {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 40px;
+      padding-top: 34px;
+    }
+    h1 {
+      font-size: 40px;
+    }
+    h2 {
+      font-size: 27px;
+    }
+    .banner-title {
+      font-size: 28px;
+    }
+    .block {
+      padding-top: 60px;
+    }
+    .links {
+      display: none;
+    }
+    .topbar,
+    .hero,
+    .block,
+    .closing {
+      padding-left: 20px;
+      padding-right: 20px;
+    }
+    .banner {
+      padding: 40px 24px;
+    }
+  }
+
+  @media (max-width: 560px) {
+    h1 {
+      font-size: 33px;
+    }
+    .preview-row {
+      flex-direction: column;
+    }
+    .preview-sources {
+      width: 100%;
+    }
+    .enter {
+      margin-left: 0;
+      padding: 9px 14px;
+      font-size: 12.5px;
+    }
+  }
+</style>

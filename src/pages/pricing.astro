@@ -1,0 +1,107 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import PricingTable from '../components/PricingTable';
+import { peekSession } from '../lib/auth';
+import { sessionSecret } from '../lib/authApi';
+import { getEntitlement } from '../lib/limits';
+import { PLANS } from '../lib/plans';
+import '../styles/auth.css';
+
+export const prerender = false;
+
+// Страницата е публична: четем сесията, ако има такава, но не създаваме профил
+// за всеки минаващ.
+const user = await peekSession(Astro.request, env.DB, sessionSecret());
+const signedIn = Boolean(user && !user.isAnonymous);
+const entitlement = user ? await getEntitlement(env.DB, user.id) : null;
+
+const plans = [PLANS.free, PLANS.plus, PLANS.pro];
+---
+
+<Base title="Цени — Записки" description="Безплатно за първите три тетрадки. Плюс и Про за повече.">
+  <div class="topline">
+    <a class="auth-brand" href="/" style="margin:0">
+      <span class="mark">З</span>
+      <span class="name">Записки</span>
+    </a>
+    <div style="flex:1"></div>
+    {
+      signedIn ? (
+        <a class="btn btn-quiet" href="/app">Тетрадките ми</a>
+      ) : (
+        <>
+          <a class="btn btn-quiet" href="/login">Влез</a>
+          <a class="btn btn-primary" style="font-size:13.5px;padding:9px 17px" href="/register">
+            Направи профил
+          </a>
+        </>
+      )
+    }
+  </div>
+
+  <div class="pricing">
+    <div class="pricing-head">
+      <h1>Плати за това, което ползваш</h1>
+      <p>
+        Започваш безплатно с три тетрадки. Ако Записки ти стане ежедневен инструмент, планът Плюс
+        вдига таваните и отваря по-точния модел.
+      </p>
+    </div>
+
+    <PricingTable
+      plans={plans}
+      currentPlan={entitlement?.plan.id ?? 'free'}
+      billingEnabled={Boolean(env.STRIPE_SECRET_KEY)}
+      signedIn={signedIn}
+      client:load
+    />
+
+    <div class="pricing-faq">
+      <div>
+        <h3>Какво е „въпрос“?</h3>
+        <p>
+          Всяко нещо, което питаш в чата на тетрадка. Материалите от Студиото — ръководство,
+          хронология, отчет, въпроси — не се броят като въпроси.
+        </p>
+      </div>
+      <div>
+        <h3>Какво става, ако спра да плащам?</h3>
+        <p>
+          Нищо не се изтрива. Профилът пада на безплатния план: тетрадките над третата остават за
+          четене, но нови не се създават, докато не изтриеш някоя.
+        </p>
+      </div>
+      <div>
+        <h3>Мога ли да ползвам свой Gemini ключ?</h3>
+        <p>
+          Да. В Настройки слагаш собствен ключ, който се пази само в твоя браузър. Тогава
+          заявките към модела се плащат от твоя ключ, а не от нашия.
+        </p>
+      </div>
+      <div>
+        <h3>Как се спира абонамент?</h3>
+        <p>
+          От Настройки → Плащане се отваря порталът на Stripe. Оттам сменяш картата, тегляш
+          фактури или спираш абонамента — важи до края на платения период.
+        </p>
+      </div>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .topline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 22px 26px 0;
+  }
+  @media (max-width: 640px) {
+    .topline {
+      padding: 16px 18px 0;
+    }
+  }
+</style>

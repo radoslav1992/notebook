@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict';
+
+const { renderMarkdown } = await import('../src/lib/markdown.ts');
+const { splitIntoPassages, decodeEntities, normalizeWhitespace } = await import('../src/lib/extract/html.ts');
+const { parseTurns, groupTurns } = await import('../src/lib/studio.ts');
+const { extractCitations, stripCitationMarkers, citationLabel, shortName } = await import('../src/lib/rag.ts');
+const { pcmToWav, pcmDuration, formatDuration, concatPcm } = await import('../src/lib/audio/wav.ts');
+
+let pass = 0;
+const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
+
+console.log('markdown');
+t('escapes HTML from model/document text', () => {
+  const html = renderMarkdown('<img src=x onerror=alert(1)> и **важно**');
+  assert.ok(!html.includes('<img'), 'raw tag leaked: ' + html);
+  assert.ok(html.includes('&lt;img'));
+  assert.ok(html.includes('<strong>важно</strong>'));
+});
+t('headings, lists, code', () => {
+  assert.equal(renderMarkdown('## Цели'), '<h3>Цели</h3>');
+  assert.equal(renderMarkdown('- а\n- б'), '<ul><li>а</li><li>б</li></ul>');
+  assert.equal(renderMarkdown('1. а\n2. б'), '<ol><li>а</li><li>б</li></ol>');
+  assert.ok(renderMarkdown('`код`').includes('<code>код</code>'));
+});
+t('italics do not eat bold', () => {
+  assert.equal(renderMarkdown('**а** и *б*'), '<p><strong>а</strong> и <em>б</em></p>');
+});
+
+console.log('citations');
+const passages = [
+  { index: 1, sourceId: 's1', sourceOrdinal: 1, sourceName: 'Зелена сделка.pdf', locator: 'стр. 12', text: 'алфа', score: 1 },
+  { index: 2, sourceId: 's2', sourceOrdinal: 4, sourceName: 'Fit for 55 — резюме.pdf', locator: 'стр. 3', text: 'бета', score: 1 },
+  { index: 3, sourceId: 's3', sourceOrdinal: 5, sourceName: 'Дебат в ЕП', locator: '34:12', text: 'гама', score: 1 },
+];
+t('label matches the design format', () => {
+  assert.equal(citationLabel(passages[0]), '1 · Зелена сделка, стр. 12');
+  assert.equal(citationLabel(passages[2]), '5 · Дебат в ЕП, 34:12');
+});
+t('only cited passages become chips, in order of first use', () => {
+  const r = extractCitations('Първо [2]. После [1] и пак [2]. Край [3].', passages);
+  assert.deepEqual(r.citations.map((c) => c.label), [
+    '4 · Fit for 55 — резюме, стр. 3',
+    '1 · Зелена сделка, стр. 12',
+    '5 · Дебат в ЕП, 34:12',
+  ]);
+  assert.equal(r.text, 'Първо. После и пак. Край.');
+});
+t('grouped markers [1,3] both count', () => {
+  const r = extractCitations('Twierdzenie [1, 3].', passages);
+  assert.deepEqual(r.citations.map((c) => c.ordinal), [1, 2]);
+});
+t('markers pointing nowhere are dropped, text still cleaned', () => {
+  const r = extractCitations('Нещо [9].', passages);
+  assert.equal(r.citations.length, 0);
+  assert.equal(r.text, 'Нещо.');
+});
+t('punctuation is not orphaned', () => {
+  assert.equal(stripCitationMarkers('Да [1], после [2]!'), 'Да, после!');
+});
+t('shortName strips extensions', () => {
+  assert.equal(shortName('Бележки от лекция 4.docx'), 'Бележки от лекция 4');
+});
+
+console.log('podcast script');
+const script = `Ния: Добре, да започнем от числата.
+Стефан: Да, и те не се връзват.
+**Ния:** Чакай — кой документ казва 2038?
+(смее се)
+Стефан: Планът за преход.
+продължава изречението тук`;
+t('parses both speakers, bold names, and continuations', () => {
+  const turns = parseTurns(script);
+  assert.deepEqual(turns.map((x) => x.speaker), ['Ния', 'Стефан', 'Ния', 'Стефан']);
+  assert.equal(turns[2].text, 'Чакай — кой документ казва 2038?');
+  assert.ok(turns[3].text.endsWith('продължава изречението тук'), turns[3].text);
+});
+t('groups keep both voices per TTS segment', () => {
+  const turns = Array.from({ length: 40 }, (_, i) => ({
+    speaker: i % 2 ? 'Стефан' : 'Ния',
+    text: 'Реплика номер ' + i + ' с достатъчно текст, за да напълни сегмента бързо.',
+  }));
+  const groups = groupTurns(turns, 600);
+  assert.ok(groups.length > 1, 'expected several segments');
+  for (const g of groups) assert.ok(g.length <= 700, 'segment too long: ' + g.length);
+  assert.equal(groups.join('\n').split('\n').length, 40);
+});
+t('ignores stage directions and headings', () => {
+  const turns = parseTurns('# Заглавие\n[музика]\nНия: Само това е реплика.');
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].text, 'Само това е реплика.');
+});
+
+console.log('passages');
+t('splits on headings and keeps locators', () => {
+  const text = '## Цели за 2030\n\n' + 'а'.repeat(1500) + '\n\n## Финансиране\n\n' + 'б'.repeat(200);
+  const ps = splitIntoPassages(text);
+  assert.ok(ps.length >= 2, JSON.stringify(ps.map((p) => p.locator)));
+  assert.ok(ps[0].locator.includes('Цели за 2030'));
+  assert.ok(ps[ps.length - 1].locator.includes('Финансиране'));
+});
+t('decodes entities incl. Bulgarian quotes', () => {
+  assert.equal(decodeEntities('&bdquo;тест&ldquo; &amp; &#1073;'), '„тест“ & б');
+});
+t('normalizes nbsp and runs of blank lines', () => {
+  assert.equal(normalizeWhitespace('а  б\n\n\n\nв'), 'а б\n\nв');
+});
+
+console.log('wav');
+t('header is a valid 24kHz mono PCM WAV', () => {
+  const pcm = new Uint8Array(48000 * 2); // 2s at 24k, 16-bit
+  const wav = pcmToWav(pcm, { sampleRate: 24000 });
+  const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  assert.equal(String.fromCharCode(...wav.subarray(0, 4)), 'RIFF');
+  assert.equal(String.fromCharCode(...wav.subarray(8, 12)), 'WAVE');
+  assert.equal(dv.getUint32(4, true), 36 + pcm.length);
+  assert.equal(dv.getUint16(20, true), 1);        // PCM
+  assert.equal(dv.getUint16(22, true), 1);        // mono
+  assert.equal(dv.getUint32(24, true), 24000);    // sample rate
+  assert.equal(dv.getUint32(28, true), 48000);    // byte rate
+  assert.equal(dv.getUint16(32, true), 2);        // block align
+  assert.equal(dv.getUint16(34, true), 16);       // bits
+  assert.equal(dv.getUint32(40, true), pcm.length);
+  assert.equal(wav.length, 44 + pcm.length);
+  assert.equal(pcmDuration(pcm.length, 24000), 2);
+});
+t('concat preserves order and length', () => {
+  const out = concatPcm([new Uint8Array([1, 2]), new Uint8Array([3])]);
+  assert.deepEqual([...out], [1, 2, 3]);
+});
+t('formats durations like the design', () => {
+  assert.equal(formatDuration(744), '12:24');
+  assert.equal(formatDuration(0), '0:00');
+  assert.equal(formatDuration(281), '4:41');
+});
+
+console.log('\n' + pass + ' assertions passed');

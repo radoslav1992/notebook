@@ -1,0 +1,28 @@
+---
+import { env } from 'cloudflare:workers';
+import Auth from '../layouts/Auth.astro';
+import AuthCard from '../components/AuthCard';
+import { safeNext } from '../lib/authApi';
+
+export const prerender = false;
+
+// Влезлите хора няма какво да правят тук.
+if (!Astro.locals.user.isAnonymous) {
+  return Astro.redirect(safeNext(Astro.url.searchParams.get('next')), 302);
+}
+
+const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+const next = safeNext(Astro.url.searchParams.get('next'));
+const error = (Astro.url.searchParams.get('error') ?? '').slice(0, 200);
+---
+
+<Auth title="Влез — Записки">
+  <AuthCard
+    mode="login"
+    googleEnabled={googleEnabled}
+    emailEnabled={Boolean(env.RESEND_API_KEY)}
+    next={next}
+    initialError={error}
+    client:load
+  />
+</Auth>

@@ -1,0 +1,29 @@
+---
+import { env } from 'cloudflare:workers';
+import Auth from '../layouts/Auth.astro';
+import AuthCard from '../components/AuthCard';
+import { safeNext } from '../lib/authApi';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+if (!user.isAnonymous) {
+  return Astro.redirect(safeNext(Astro.url.searchParams.get('next')), 302);
+}
+
+// Колко тетрадки е направил като гост — казваме му, че няма да ги загуби.
+const row = await env.DB.prepare('SELECT COUNT(*) AS c FROM notebooks WHERE user_id = ?')
+  .bind(user.id)
+  .first<{ c: number }>();
+---
+
+<Auth title="Направи профил — Записки">
+  <AuthCard
+    mode="register"
+    googleEnabled={Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET)}
+    emailEnabled={Boolean(env.RESEND_API_KEY)}
+    next={safeNext(Astro.url.searchParams.get('next'))}
+    guestNotebooks={row?.c ?? 0}
+    client:load
+  />
+</Auth>

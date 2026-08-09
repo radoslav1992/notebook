@@ -1,0 +1,15 @@
+---
+import Auth from '../layouts/Auth.astro';
+import AuthCard from '../components/AuthCard';
+
+export const prerender = false;
+
+const token = Astro.url.searchParams.get('token') ?? '';
+if (!token) {
+  return Astro.redirect('/forgot', 302);
+}
+---
+
+<Auth title="Нова парола — Записки">
+  <AuthCard mode="reset" googleEnabled={false} emailEnabled={true} token={token} client:load />
+</Auth>

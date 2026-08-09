@@ -1,0 +1,16 @@
+{
+  "name": "Записки",
+  "short_name": "Записки",
+  "description": "Тетрадки с източници и въпроси. Всеки отговор идва с препратка.",
+  "lang": "bg",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#faf7f2",
+  "theme_color": "#7a2230",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

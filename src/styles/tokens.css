@@ -1,0 +1,57 @@
+/*
+ * Записки — дизайн токени.
+ * Стойностите са пренесени 1:1 от Zapiski.dc.html (Claude Design handoff).
+ * Дизайнът е с един-единствен светъл режим — умишлено няма тъмна тема.
+ */
+:root {
+  color-scheme: light;
+
+  /* Повърхности */
+  --bg: #faf7f2;
+  --surface: #fffdfa;
+  --surface-sunken: #faf7f2;
+  --hover: #f7f2ea;
+  --phone-bg: #efe9e0;
+
+  /* Текст */
+  --ink: #1c1a17;
+  --muted: #6b6560;
+  --faint: #9a938c;
+
+  /* Линии */
+  --line: #e3ddd3;
+  --line-soft: #efe9df;
+  --line-dashed: #d9d0c4;
+  --line-strong: #c9bfae;
+  --line-mind: #e0d5c6;
+  --scroll-thumb: #e0d8cc;
+
+  /* Марка */
+  --brand: #7a2230;
+  --brand-hover: #5c1a24;
+  --brand-tint: #f2e4e3;
+
+  /* Типография */
+  --font-sans: Manrope, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: Spectral, Georgia, 'Times New Roman', serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Радиуси */
+  --r-pill: 99px;
+  --r-xs: 5px;
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 12px;
+  --r-xl: 14px;
+  --r-2xl: 16px;
+  --r-3xl: 20px;
+  --r-4xl: 22px;
+
+  /* Сенки */
+  --shadow-card: 0 20px 50px rgba(28, 26, 23, 0.07);
+  --shadow-phone: 0 30px 60px rgba(28, 26, 23, 0.25);
+
+  /* Оразмеряване */
+  --chrome-h: 60px;
+  --page-max: 1180px;
+}
