@@ -14,13 +14,17 @@
   },
 
   // ── D1: notebooks, sources, chunks, messages, notes, studio jobs ──────────
-  // Create with:  wrangler d1 create zapiski
-  // then paste the returned database_id below.
+  // No database_id on purpose: wrangler finds or creates the database named
+  // below on `wrangler deploy`, so deploying straight from GitHub works with
+  // nothing to fill in. Paste the real id here if you prefer it pinned:
+  //   wrangler d1 create zapiski   →   "database_id": "<uuid>"
+  //
+  // The tables themselves are NOT created by deploying. Run once:
+  //   wrangler d1 migrations apply zapiski --remote
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "zapiski",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
       "migrations_dir": "migrations"
     }
   ],
