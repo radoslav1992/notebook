@@ -13,6 +13,12 @@
     "enabled": true
   },
 
+  // The audio overview decodes and concatenates tens of MB of PCM, then writes a
+  // WAV — real CPU, well past the 30s default. Paid plans allow up to 300000.
+  "limits": {
+    "cpu_ms": 120000
+  },
+
   // ── D1: notebooks, sources, chunks, messages, notes, studio jobs ──────────
   // No database_id on purpose: wrangler finds or creates the database named
   // below on `wrangler deploy`, so deploying straight from GitHub works with
@@ -67,57 +73,35 @@
   // Nothing to create — the binding is the whole setup.
   "ai": {
     "binding": "AI"
-  },
-
-  "vars": {
-    // "vectorize" (default) = own RAG over Cloudflare Vectorize with exact page citations.
-    // "gemini"              = Google's managed File Search RAG store.
-    "RAG_BACKEND": "vectorize",
-
-    // ── Which models, and therefore which provider ────────────────────────
-    //
-    // EDIT THESE HERE, NOT IN THE DASHBOARD. Every `wrangler deploy` replaces
-    // the worker's plain-text variables with this block, so a value typed into
-    // Settings → Variables and Secrets is silently reverted on the next push.
-    // (Secrets are not touched — only plain variables.) `GET /api/models` shows
-    // which models the deployed key actually accepts.
-    //
-    // The name picks the provider, because the identifiers never overlap:
-    //   no slash        → Google Generative Language API, needs GEMINI_API_KEY
-    //   "google/…"      → Workers AI partner model, billed by Cloudflare
-    //   "@cf/…"         → Cloudflare's own model
-    // See src/lib/ai/select.ts. To move everything to Cloudflare:
-    //   "CHAT_MODEL":  "google/gemini-3.6-flash",
-    //   "EMBED_MODEL": "@cf/baai/bge-m3",        // 1024 dims — needs its own index
-    //   "TTS_MODEL":   "google/gemini-3.1-flash-tts",
-    //
-    // Google retires models EARLIER than the announced shutdown date:
-    // gemini-2.5-flash and gemini-2.5-pro already answer "no longer available
-    // to new users" on new keys, though both are listed for 2026-10-16. Check
-    // /api/models before trusting anything here.
-    "CHAT_MODEL": "gemini-3.6-flash",
-    // Offered in Settings to paid plans only. Left unset because a wrong id
-    // here reaches users as a broken model picker; add yours from /api/models:
-    //   "CHAT_MODEL_PRO": "gemini-3.1-pro",
-    "EMBED_MODEL": "gemini-embedding-001",
-    // Проверено име. По-новите TTS модели носят суфикс „-preview“
-    // (`gemini-3.1-flash-tts-preview`), затова се вземат от /api/models, а не от
-    // блогове. Ако сложиш несъществуващ, грешката изброява приетите.
-    "TTS_MODEL": "gemini-2.5-flash-preview-tts",
-
-    // Vector width. Derived from EMBED_MODEL (see ai/select.ts); set only if a
-    // model is missing from that table. Must match the Vectorize index.
-    // "EMBED_DIMENSIONS": "1024",
-
-    "RESPONSE_LANGUAGE": "bg",
-
-    // Адресът, на който приложението живее. Задай го след първия deploy —
-    // от него се правят връзките в писмата и redirect_uri за Google.
-    // "PUBLIC_SITE_URL": "https://zapiski.tvoydomain.bg",
-
-    // Подател на писмата; трябва да е на потвърден в Resend домейн.
-    "EMAIL_FROM": "Записки <onboarding@resend.dev>"
   }
+
+  // ── Variables live in the DASHBOARD, not here ────────────────────────────
+  //
+  // This file deliberately sets NO vars. Every `wrangler deploy` replaces the
+  // worker's plain-text variables with whatever `vars` contains, so a value
+  // shipped here would silently revert anything typed into
+  // Settings → Variables and Secrets. With the block gone, the dashboard is the
+  // only place they live and nothing overwrites it.
+  //
+  // Each one has a default in code, so a fresh clone runs with none of them set:
+  //
+  //   CHAT_MODEL        gemini-3.6-flash              src/lib/ai/defaults.ts
+  //   CHAT_MODEL_PRO    (unset — paid plans get CHAT_MODEL)
+  //   EMBED_MODEL       gemini-embedding-001          src/lib/ai/defaults.ts
+  //   TTS_MODEL         gemini-2.5-flash-preview-tts  src/lib/ai/defaults.ts
+  //   EMBED_DIMENSIONS  derived from EMBED_MODEL      src/lib/ai/select.ts
+  //   RAG_BACKEND       vectorize                     src/lib/api.ts
+  //   RESPONSE_LANGUAGE bg                            src/lib/api.ts
+  //   EMAIL_FROM        Записки <onboarding@resend.dev>  src/lib/email.ts
+  //   PUBLIC_SITE_URL   the request's own host        src/lib/authApi.ts
+  //
+  // A model name also picks its provider: no slash → Google API with
+  // GEMINI_API_KEY, "google/…" or "@cf/…" → Workers AI. See docs/models.md, and
+  // GET /api/models for what the deployed key actually accepts.
+  //
+  // EMBED_MODEL is the one to change carefully: its vector width must match the
+  // Vectorize index, and an index cannot be resized. A mismatch fails with a
+  // message saying so rather than returning bad results.
 
   // Secrets (set with `wrangler secret put <NAME>`), see docs/SETUP.md:
   //   GEMINI_API_KEY          — https://aistudio.google.com/apikey; required

@@ -191,23 +191,19 @@ build** и виж лога.
 
 1. Ако имаш домейн: worker-ът → **Settings → Domains & Routes → Add → Custom
    domain**, въведи го и изчакай сертификата.
-2. Отвори `wrangler.jsonc` в GitHub, натисни ✏️ и разкоментирай реда, като
-   сложиш крайния адрес:
+2. Worker-ът → **Settings → Variables and Secrets** → **+ Add** →
+   Type: **Variable**:
 
-   ```jsonc
-   "PUBLIC_SITE_URL": "https://zapiski.tvoydomain.bg",
-   ```
+   | Name | Value |
+   | --- | --- |
+   | `PUBLIC_SITE_URL` | `https://zapiski.tvoydomain.bg` |
 
-3. **Commit changes** директно в `main`. Cloudflare сам пуска нов deploy.
+3. **Deploy**.
 
-> Защо не в **Variables and Secrets**: стойностите от `vars` в `wrangler.jsonc`
-> заместват обикновените променливи в dashboard-а при всеки deploy. Ако ти е
-> по-удобно през dashboard-а, добави го като **Secret** — тайните не се
-> заместват.
->
-> Това важи за всяка променлива от `vars`, включително `CHAT_MODEL` и
-> `TTS_MODEL`. Сменен модел от dashboard-а се връща на стария при следващия
-> deploy — виж [models.md](models.md).
+> `wrangler.jsonc` нарочно не задава никакви `vars`, затова стойностите от
+> dashboard-а остават при следващите deploy-и. Така се сменят и моделите —
+> `CHAT_MODEL`, `TTS_MODEL` и останалите — без commit. Пълният списък с
+> стойностите по подразбиране е в [models.md](models.md).
 
 ---
 

@@ -17,6 +17,11 @@ import type { Mindmap, Note, Source } from './types';
 
 const SAMPLE_RATE = 24_000;
 
+/** Таван на сценария в токени за исканата дължина. */
+export function scriptTokenBudget(minutes: number): number {
+  return Math.min(8000, Math.max(1500, Math.round(minutes * 500)));
+}
+
 /* ── Учебни материали ────────────────────────────────────────────────────── */
 
 export async function generateStudioNote(
@@ -80,8 +85,9 @@ export interface AudioResult {
  * Прави подкаст с двама водещи: сценарий от източниците → реплики →
  * multi-speaker TTS на сегменти → един WAV файл в R2.
  *
- * Тече във фонов режим (`ctx.waitUntil`) и обновява реда в studio_jobs,
- * защото цялото нещо отнема една до две минути.
+ * Тече във фонов режим (`ctx.waitUntil`) и обновява реда в studio_jobs, защото
+ * отнема десетки секунди. Прегледът е кратък нарочно — виж `audioMinutes` в
+ * plans.ts за двете причини.
  */
 export async function generateAudioOverview(
   ctx: RagContext,
@@ -93,7 +99,9 @@ export async function generateAudioOverview(
     minutes?: number;
   },
 ): Promise<AudioResult> {
-  const minutes = clamp(input.minutes ?? 8, 3, 12);
+  // Долната граница е 1: планът вече дава по 2 минути, а стар клиент може да
+  // поиска повече — таванът е на плана, не тук.
+  const minutes = clamp(input.minutes ?? 2, 1, 12);
 
   await updateJob(ctx.db, input.jobId, {
     status: 'running',
@@ -113,7 +121,11 @@ export async function generateAudioOverview(
       ctx.language,
       minutes,
     )}`,
-    config: { temperature: 0.85, maxOutputTokens: 16_000 },
+    // Таванът върви с дължината, а не фиксирани 16 000. Изходните токени се
+    // генерират един по един, тоест таванът е и таван на времето: с 16 000
+    // моделът може да пише минути, а цялата задача живее в едно изпълнение на
+    // worker-а. ~150 думи на минута, с широк запас за кирилица.
+    config: { temperature: 0.85, maxOutputTokens: scriptTokenBudget(minutes) },
   });
 
   const turns = parseTurns(script);
@@ -132,8 +144,8 @@ export async function generateAudioOverview(
     { name: HOSTS.b.name, voice: HOSTS.b.voice },
   ];
 
-  // Пишем директно в един буфер, вместо да пазим всички сегменти наведнъж —
-  // 12 минути звук са ~35 MB, а Workers има 128 MB памет.
+  // Пишем директно в един буфер, вместо да пазим всички сегменти наведнъж:
+  // две минути звук са ~5.8 MB, а Workers има 128 MB памет за всичко.
   const writer = new PcmWriter(minutes * 60 * SAMPLE_RATE * 2 * 1.5);
   let done = 0;
 
