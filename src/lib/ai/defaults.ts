@@ -22,5 +22,15 @@ export const FALLBACK_CHAT_MODEL = 'gemini-3.6-flash';
  */
 export const FALLBACK_EMBED_MODEL = 'gemini-embedding-001';
 
-/** Multi-speaker TTS с български. `gemini-2.5-flash-preview-tts` е preview от 2.5. */
-export const FALLBACK_TTS_MODEL = 'gemini-3.1-flash-tts';
+/**
+ * Multi-speaker TTS. Това е името, което документацията на Gemini API дава от
+ * най-дълго, и то НЕ е спряно за нови ключове — ограничението удари
+ * `gemini-2.5-flash` и `gemini-2.5-pro`, но не и preview вариантите за реч.
+ *
+ * По-новите TTS модели съществуват под друго име, отколкото пише в блоговете:
+ * „Gemini 3.1 Flash TTS“ е `gemini-3.1-flash-tts-preview`, а не
+ * `gemini-3.1-flash-tts`. Затова тук стои проверената стойност, а актуалният
+ * списък се вижда на `GET /api/models` (`usable.tts`) — при несъществуващ модел
+ * и самата грешка изброява какво приема ключът.
+ */
+export const FALLBACK_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
