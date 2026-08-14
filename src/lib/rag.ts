@@ -277,10 +277,41 @@ export async function* answerStream(
   }
 
   const final = extractCitations(raw, passages);
+  warnIfUncited(ctx, passages.length, final);
+
   const alreadyShown = stripCitationMarkers(raw.slice(0, emitted));
   const tail = final.text.slice(alreadyShown.length);
   if (tail) yield { type: 'delta', text: tail };
   yield { type: 'done', text: final.text, citations: final.citations };
+}
+
+/**
+ * Отговор без нито един цитат, при положение че сме дали пасажи.
+ *
+ * Това е тихият провал, който трябва да се вижда: цялото обещание на
+ * приложението е „всеки отговор идва с препратка“, а то се държи само от това
+ * моделът да пише маркери `[3]`. Спре ли да ги пише — сменен на по-евтин модел,
+ * променена подсказка, нова версия отсреща — `extractCitations` не намира нищо,
+ * отговорът пак се показва, а чиповете просто изчезват. Нищо не гърми.
+ *
+ * Затова случаят влиза в лога с модела и с началото на отговора: в
+ * `wrangler tail` се вижда веднага, вместо да се забележи седмици по-късно.
+ */
+function warnIfUncited(
+  ctx: RagContext,
+  passageCount: number,
+  final: { text: string; citations: Citation[] },
+): void {
+  if (passageCount === 0 || final.citations.length > 0) return;
+  // Отказът „в източниците няма отговор“ е редно да е без цитати.
+  if (/няма отговор|не намирам|не открих/i.test(final.text)) return;
+
+  console.warn('[zapiski:citations] отговор без нито една препратка', {
+    model: ctx.ai.chat.model,
+    passages: passageCount,
+    chars: final.text.length,
+    answer: final.text.slice(0, 200),
+  });
 }
 
 /** Индекс, до който текстът със сигурност не съдържа незавършен маркер. */
