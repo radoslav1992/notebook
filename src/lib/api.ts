@@ -10,6 +10,7 @@ import {
   type Ai,
 } from './ai';
 import { HttpError, getNotebook, getSettings, listSources } from './db';
+import { mailer } from './email';
 import { getEntitlement } from './limits';
 import type { RagContext } from './rag';
 import type { IngestContext } from './ingest';
@@ -90,6 +91,28 @@ export function ai(ctx: APIContext, model?: string): Ai {
     googleHost: env.GEMINI_BASE_URL,
     ai: env.AI,
   });
+}
+
+/**
+ * Непотвърден имейл не харчи квота.
+ *
+ * Иначе изискването за профил, което сложихме точно за да има кой да отговаря
+ * за разхода, се заобикаля с произволен низ с „@“ — потвърждаването беше само
+ * украса, защото никъде не се проверяваше.
+ *
+ * Изключението е важно: ако писма не могат да се пращат (няма нито binding, нито
+ * Resend), потвърждаване е невъзможно и изискването би заключило всички,
+ * включително локалната работа. Тогава просто минава.
+ */
+export function requireVerified(ctx: APIContext): void {
+  const user = ctx.locals.user;
+  if (user.emailVerified) return;
+  if (!mailer(env).enabled) return;
+
+  throw new HttpError(
+    403,
+    `Потвърди имейла си${user.email ? ` (${user.email})` : ''}, за да продължиш. От Настройки може да изпратиш писмото наново.`,
+  );
 }
 
 export function backendOf(): 'vectorize' | 'gemini' {

@@ -7,6 +7,7 @@ import {
   ragContext,
   readJson,
   requireNotebook,
+  requireVerified,
   selectedSources,
 } from '~/lib/api';
 import { HttpError, createJob, failStaleJob, getLatestJob, isJobStale, updateJob } from '~/lib/db';
@@ -42,6 +43,7 @@ export const POST: APIRoute = handler(async (ctx) => {
     }
   }
 
+  requireVerified(ctx);
   await assertCanMakeAudio(env.DB, ctx.locals.user.id);
 
   const sources = await selectedSources(id);
