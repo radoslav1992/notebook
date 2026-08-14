@@ -378,6 +378,44 @@ export async function getChunksByIds(db: D1Database, ids: string[]): Promise<Chu
   return results;
 }
 
+/**
+ * Търсене по думи през FTS5 — връща само идентификатори, подредени по BM25.
+ *
+ * Стеснява се до тетрадката и до избраните източници още тук, защото пасаж от
+ * чужда тетрадка не бива да заема място в класирането, дори после да отпадне.
+ *
+ * Грешка не се пуска нагоре: индексът е допълнение към векторното търсене и ако
+ * той не отговори (непусната миграция например), отговорът трябва да излезе с
+ * това, което Vectorize е намерил, вместо целият въпрос да гръмне.
+ */
+export async function searchChunksByKeyword(
+  db: D1Database,
+  notebookId: string,
+  sourceIds: string[],
+  match: string,
+  limit: number,
+): Promise<string[]> {
+  if (sourceIds.length === 0) return [];
+  const marks = sourceIds.map(() => '?').join(', ');
+  try {
+    const { results } = await db
+      .prepare(
+        `SELECT chunk_id FROM chunks_fts
+         WHERE chunks_fts MATCH ?
+           AND notebook_id = ?
+           AND source_id IN (${marks})
+         ORDER BY bm25(chunks_fts)
+         LIMIT ?`,
+      )
+      .bind(match, notebookId, ...sourceIds, limit)
+      .all<{ chunk_id: string }>();
+    return results.map((r) => r.chunk_id);
+  } catch (err) {
+    console.error('[zapiski:fts]', err);
+    return [];
+  }
+}
+
 export async function getChunkIdsForSources(
   db: D1Database,
   sourceIds: string[],

@@ -1,5 +1,6 @@
 import { Gemini, groundingChunksOf, textOf } from './gemini';
-import { getChunksByIds, getChunksForSources } from './db';
+import { getChunksByIds, getChunksForSources, searchChunksByKeyword } from './db';
+import { ftsQuery, rrf } from './search';
 import { requireGoogleFeature, type Ai } from './ai';
 import { isDimensionMismatch, vectorError } from './vector';
 import { answerSystem } from './prompts';
@@ -39,48 +40,35 @@ export async function retrieve(
 ): Promise<Retrieved[]> {
   if (sources.length === 0) return [];
 
-  const [vector] = await ctx.ai.embed.embed([query], 'RETRIEVAL_QUERY');
-  if (!vector) return [];
+  // Двете търсения не си зависят, а векторното чака мрежа за вграждането —
+  // затова вървят заедно.
+  const match = ftsQuery(query);
+  const [vectorIds, keywordIds] = await Promise.all([
+    searchByMeaning(ctx, notebookId, query, sources),
+    match
+      ? searchChunksByKeyword(ctx.db, notebookId, sources.map((s) => s.id), match, OVERFETCH)
+      : Promise.resolve<string[]>([]),
+  ]);
 
-  const allowed = new Set(sources.map((s) => s.id));
-  const filter: Record<string, unknown> = { notebookId: { $eq: notebookId } };
-  // Стесняваме още в индекса, когато част от източниците са изключени.
-  if (sources.length <= 20) {
-    filter.sourceId = { $in: sources.map((s) => s.id) };
-  }
-
-  let matches: { id: string; score: number }[] = [];
-  try {
-    const res = await ctx.vectorize.query(vector, {
-      topK: OVERFETCH,
-      filter: filter as VectorizeVectorMetadataFilter,
-      returnValues: false,
-      returnMetadata: 'none',
-    });
-    matches = res.matches.map((m) => ({ id: m.id, score: m.score }));
-  } catch (err) {
-    // Сгрешена ширина не е проблем на филтъра: вторият опит ще падне по същия
-    // начин, а после отговорът излиза „в източниците няма нищо“, което е лъжа.
-    if (isDimensionMismatch(err)) throw vectorError(err, ctx.ai.embed.dimensions);
-    // Ако филтърът не мине (липсващ индекс по метаданни), търсим широко и
-    // отсяваме след това.
-    const res = await ctx.vectorize.query(vector, { topK: OVERFETCH * 2, returnMetadata: 'none' });
-    matches = res.matches.map((m) => ({ id: m.id, score: m.score }));
-  }
-
-  if (matches.length === 0) return [];
+  // Само непразните класирания влизат в сливането: списък с нула пасажа не
+  // значи „всичко е еднакво лошо“, а „това търсене няма мнение“.
+  const fused = rrf([vectorIds, keywordIds].filter((list) => list.length > 0));
+  if (fused.length === 0) return [];
 
   const rows = await getChunksByIds(
     ctx.db,
-    matches.map((m) => m.id),
+    fused.map((f) => f.id),
   );
   const byId = new Map(rows.map((r) => [r.id, r]));
   const byOrdinal = new Map(sources.map((s) => [s.id, s]));
+  const allowed = new Set(sources.map((s) => s.id));
 
   const kept: Retrieved[] = [];
-  for (const m of matches) {
-    const row = byId.get(m.id);
+  for (const f of fused) {
+    const row = byId.get(f.id);
     if (!row) continue;
+    // Проверката остава и след стесняването в двете търсения: тя е последната
+    // преграда пасаж от чужда тетрадка да влезе в контекста на модела.
     if (row.notebook_id !== notebookId) continue;
     if (!allowed.has(row.source_id)) continue;
     const source = byOrdinal.get(row.source_id);
@@ -92,11 +80,46 @@ export async function retrieve(
       sourceName: source.name,
       locator: row.locator,
       text: row.text,
-      score: m.score,
+      score: f.score,
     });
     if (kept.length >= TOP_K) break;
   }
   return kept;
+}
+
+/** Търсене по смисъл във Vectorize — връща идентификатори, подредени по близост. */
+async function searchByMeaning(
+  ctx: RagContext,
+  notebookId: string,
+  query: string,
+  sources: Source[],
+): Promise<string[]> {
+  const [vector] = await ctx.ai.embed.embed([query], 'RETRIEVAL_QUERY');
+  if (!vector) return [];
+
+  const filter: Record<string, unknown> = { notebookId: { $eq: notebookId } };
+  // Стесняваме още в индекса, когато част от източниците са изключени.
+  if (sources.length <= 20) {
+    filter.sourceId = { $in: sources.map((s) => s.id) };
+  }
+
+  try {
+    const res = await ctx.vectorize.query(vector, {
+      topK: OVERFETCH,
+      filter: filter as VectorizeVectorMetadataFilter,
+      returnValues: false,
+      returnMetadata: 'none',
+    });
+    return res.matches.map((m) => m.id);
+  } catch (err) {
+    // Сгрешена ширина не е проблем на филтъра: вторият опит ще падне по същия
+    // начин, а после отговорът излиза „в източниците няма нищо“, което е лъжа.
+    if (isDimensionMismatch(err)) throw vectorError(err, ctx.ai.embed.dimensions);
+    // Ако филтърът не мине (липсващ индекс по метаданни), търсим широко и
+    // отсяваме след това.
+    const res = await ctx.vectorize.query(vector, { topK: OVERFETCH * 2, returnMetadata: 'none' });
+    return res.matches.map((m) => m.id);
+  }
 }
 
 /** Пасажи за задачи над целия материал (подкаст, мисловна карта, ръководство). */
