@@ -18,6 +18,9 @@ t('the app and everything it writes through needs an account', () => {
     '/api/notebooks/nb_123/chat',
     '/api/settings',
     '/api/me',
+    // Изнася всичко, което човекът е писал. Ако падне в „peek“, файлът се
+    // сваля с празна сесия, тоест от всеки.
+    '/api/me/export',
     // Прави заявка към Google при всяко отваряне — отворен, той е безплатен
     // начин някой да хаби квотата на инсталацията.
     '/api/models',
@@ -27,7 +30,17 @@ t('the app and everything it writes through needs an account', () => {
 });
 
 t('marketing pages stay open to everyone', () => {
-  for (const p of ['/', '/pricing', '/favicon.ico', '/_astro/app.css', '/robots.txt']) {
+  for (const p of [
+    '/',
+    '/pricing',
+    // Политиката и условията трябва да се четат ПРЕДИ да има профил — точно
+    // затова се сочат от долния колонтитул на началната страница.
+    '/privacy',
+    '/terms',
+    '/favicon.ico',
+    '/_astro/app.css',
+    '/robots.txt',
+  ]) {
     assert.equal(classifyRoute(p), 'open', p);
   }
 });

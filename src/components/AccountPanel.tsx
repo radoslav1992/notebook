@@ -78,6 +78,28 @@ export default function AccountPanel({
     }
   }
 
+  async function deleteAccount() {
+    // Необратимо е и трие чужди неща (файлове, вектори, абонамент), затова се
+    // потвърждава с нещо, което не се натиска по невнимание.
+    const hasPassword = user.hasPassword;
+    const answer = window.prompt(
+      hasPassword
+        ? 'Изтриването е необратимо: тетрадките, източниците, разговорите и аудиото изчезват, а абонаментът се спира.\n\nВъведи паролата си, за да потвърдиш:'
+        : 'Изтриването е необратимо: тетрадките, източниците, разговорите и аудиото изчезват, а абонаментът се спира.\n\nНапиши ИЗТРИЙ, за да потвърдиш:',
+    );
+    if (!answer) return;
+
+    setBusy('delete');
+    setError('');
+    try {
+      await apiSend('/api/me', 'DELETE', hasPassword ? { password: answer } : { confirm: answer });
+      window.location.href = '/';
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Профилът не беше изтрит.');
+      setBusy('');
+    }
+  }
+
   async function logout() {
     setBusy('logout');
     try {
@@ -160,6 +182,35 @@ export default function AccountPanel({
           </div>
           <button class="btn btn-quiet" onClick={logout} disabled={busy === 'logout'}>
             {busy === 'logout' ? 'Излизам…' : 'Излез'}
+          </button>
+        </div>
+
+        <div class="setting">
+          <div class="grow">
+            <div class="setting-name">Изтегли данните си</div>
+            <div class="setting-hint">
+              Профил, тетрадки, източници, разговори и бележки — в един JSON файл.
+            </div>
+          </div>
+          <a class="btn btn-quiet" href="/api/me/export" download>
+            Изтегли
+          </a>
+        </div>
+
+        <div class="setting">
+          <div class="grow">
+            <div class="setting-name">Изтрий профила</div>
+            <div class="setting-hint">
+              Изтрива тетрадките, източниците, разговорите, аудиото и вгражданията, и спира
+              абонамента. Необратимо е.
+            </div>
+          </div>
+          <button
+            class="btn btn-quiet danger"
+            onClick={deleteAccount}
+            disabled={busy === 'delete'}
+          >
+            {busy === 'delete' ? 'Изтривам…' : 'Изтрий'}
           </button>
         </div>
       </div>

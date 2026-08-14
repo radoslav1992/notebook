@@ -818,3 +818,149 @@ export function relativeTime(ts: number): string {
   if (months < 12) return `преди ${months} месеца`;
   return 'преди повече от година';
 }
+
+/* ── Профилът като цяло: износ и изтриване ───────────────────────────────── */
+
+/** Всичко, което трябва да се изчисти извън D1, преди редовете да изчезнат. */
+export interface UserFootprint {
+  notebookIds: string[];
+  /** Идентификаторите на пасажите — те са и идентификаторите във Vectorize. */
+  chunkIds: string[];
+  /** Оригиналните файлове в R2. */
+  r2Keys: string[];
+  /** File Search хранилищата на Google, ако RAG_BACKEND е „gemini“. */
+  storeNames: string[];
+}
+
+/**
+ * Какво притежава един профил извън D1.
+ *
+ * Събира се ПРЕДИ изтриването: след като редовете ги няма, няма как да се
+ * разбере кои вектори и кои файлове са били негови, а те остават да заемат
+ * място и — по-важното — остават налични.
+ */
+export async function collectUserFootprint(
+  db: D1Database,
+  userId: string,
+): Promise<UserFootprint> {
+  const [notebooks, chunks, sources] = await Promise.all([
+    db
+      .prepare('SELECT id, store_name FROM notebooks WHERE user_id = ?')
+      .bind(userId)
+      .all<{ id: string; store_name: string | null }>(),
+    db
+      .prepare('SELECT id FROM chunks WHERE notebook_id IN (SELECT id FROM notebooks WHERE user_id = ?)')
+      .bind(userId)
+      .all<{ id: string }>(),
+    db
+      .prepare(
+        `SELECT r2_key FROM sources
+         WHERE r2_key IS NOT NULL
+           AND notebook_id IN (SELECT id FROM notebooks WHERE user_id = ?)`,
+      )
+      .bind(userId)
+      .all<{ r2_key: string }>(),
+  ]);
+
+  return {
+    notebookIds: (notebooks.results ?? []).map((n) => n.id),
+    chunkIds: (chunks.results ?? []).map((c) => c.id),
+    r2Keys: (sources.results ?? []).map((s) => s.r2_key),
+    storeNames: (notebooks.results ?? [])
+      .map((n) => n.store_name)
+      .filter((name): name is string => Boolean(name)),
+  };
+}
+
+/**
+ * Трие всички редове на профила и накрая самия профил.
+ *
+ * Изброени са изрично, защото D1 не налага външни ключове по подразбиране —
+ * таблиците от миграция 0002 (`sessions`, `subscriptions`, `usage_counters`,
+ * `email_tokens`, `rate_limits`) дори нямат `REFERENCES`, тоест каскада няма
+ * откъде да дойде. Пропусната таблица тук значи остатък от изтрит профил.
+ */
+export async function deleteUserRows(db: D1Database, userId: string): Promise<void> {
+  const inNotebooks = 'IN (SELECT id FROM notebooks WHERE user_id = ?)';
+  await db.batch([
+    db.prepare(`DELETE FROM citations WHERE message_id IN (SELECT id FROM messages WHERE notebook_id ${inNotebooks})`).bind(userId),
+    db.prepare(`DELETE FROM chunks WHERE notebook_id ${inNotebooks}`).bind(userId),
+    db.prepare(`DELETE FROM messages WHERE notebook_id ${inNotebooks}`).bind(userId),
+    db.prepare(`DELETE FROM notes WHERE notebook_id ${inNotebooks}`).bind(userId),
+    db.prepare(`DELETE FROM sources WHERE notebook_id ${inNotebooks}`).bind(userId),
+    db.prepare(`DELETE FROM studio_jobs WHERE notebook_id ${inNotebooks}`).bind(userId),
+    db.prepare(`DELETE FROM mindmaps WHERE notebook_id ${inNotebooks}`).bind(userId),
+    db.prepare('DELETE FROM notebooks WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM settings WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM email_tokens WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM subscriptions WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM usage_counters WHERE user_id = ?').bind(userId),
+    // Ключът на брояча за опити носи самия имейл (`rl_<имейл>_<ip>`), тоест е
+    // лични данни и той. Върви ПРЕДИ реда в users, защото оттам си взима
+    // имейла. `_` в LIKE е шаблон за един знак — тук е без значение, защото
+    // имейлът по средата е буквален.
+    db
+      .prepare(
+        `DELETE FROM rate_limits
+         WHERE key LIKE (SELECT 'rl_' || email || '_%' FROM users WHERE id = ?)`,
+      )
+      .bind(userId),
+    db.prepare('DELETE FROM users WHERE id = ?').bind(userId),
+  ]);
+}
+
+/**
+ * Всичко за профила в четим вид — правото на преносимост по GDPR.
+ * Само неща, които човекът е създал или е дал сам; хешове и токени не влизат.
+ */
+export async function exportUserData(db: D1Database, userId: string): Promise<unknown> {
+  const [user, settings, notebooks, sources, messages, notes, subscription, usage] =
+    await Promise.all([
+      db
+        .prepare('SELECT id, display_name, email, email_verified, created_at FROM users WHERE id = ?')
+        .bind(userId)
+        .first(),
+      db.prepare('SELECT response_language, offline_mode, chat_model FROM settings WHERE user_id = ?').bind(userId).first(),
+      db.prepare('SELECT id, title, emoji, blurb, created_at, updated_at FROM notebooks WHERE user_id = ?').bind(userId).all(),
+      db
+        .prepare(
+          `SELECT id, notebook_id, kind, name, sub, origin_url, page_count, char_count, created_at
+           FROM sources WHERE notebook_id IN (SELECT id FROM notebooks WHERE user_id = ?)`,
+        )
+        .bind(userId)
+        .all(),
+      db
+        .prepare(
+          `SELECT id, notebook_id, role, text, created_at
+           FROM messages WHERE notebook_id IN (SELECT id FROM notebooks WHERE user_id = ?)`,
+        )
+        .bind(userId)
+        .all(),
+      db
+        .prepare(
+          `SELECT id, notebook_id, kind, title, body, created_at
+           FROM notes WHERE notebook_id IN (SELECT id FROM notebooks WHERE user_id = ?)`,
+        )
+        .bind(userId)
+        .all(),
+      db
+        .prepare('SELECT plan, status, interval, current_period_end, cancel_at_period_end FROM subscriptions WHERE user_id = ?')
+        .bind(userId)
+        .first(),
+      db.prepare('SELECT period, questions, audio FROM usage_counters WHERE user_id = ?').bind(userId).all(),
+    ]);
+
+  return {
+    exportedAt: new Date(now()).toISOString(),
+    profile: user,
+    settings,
+    notebooks: notebooks.results ?? [],
+    sources: sources.results ?? [],
+    messages: messages.results ?? [],
+    notes: notes.results ?? [],
+    subscription,
+    usage: usage.results ?? [],
+    note: 'Оригиналните файлове и аудио прегледите не са тук — свали ги от самото приложение.',
+  };
+}

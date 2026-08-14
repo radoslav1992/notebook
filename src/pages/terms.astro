@@ -1,0 +1,132 @@
+---
+import Base from '../layouts/Base.astro';
+import { DEFAULT_CONTACT_EMAIL, bareAddress } from '../lib/email';
+import { PLANS, formatPrice } from '../lib/plans';
+import '../styles/auth.css';
+import { env } from 'cloudflare:workers';
+
+export const prerender = false;
+
+const contact = bareAddress(env.CONTACT_EMAIL || DEFAULT_CONTACT_EMAIL);
+---
+
+<Base title="Условия — Записки" description="Условията за ползване на Записки.">
+  <div class="topline">
+    <a class="auth-brand" href="/" style="margin:0">
+      <span class="mark">З</span>
+      <span class="name">Записки</span>
+    </a>
+  </div>
+
+  <article class="legal">
+    <h1>Условия за ползване</h1>
+    <p class="legal-date">Последна промяна: август 2026 г.</p>
+
+    <h2>Какво е Записки</h2>
+    <p>
+      Услуга, в която качваш свои документи и питаш по тях. Отговорите се съставят от
+      езиков модел върху твоите източници и идват с препратки към мястото в тях.
+    </p>
+
+    <h2>Профил</h2>
+    <p>
+      Нужен е профил с потвърден имейл. Отговаряш за паролата си и за това, което се
+      случва през профила ти. Профил на друг човек не се ползва.
+    </p>
+
+    <h2>Какво качваш</h2>
+    <p>
+      Правата върху източниците остават твои. Ти отговаряш да имаш право да ги качиш.
+      Забранено е съдържание, което нарушава закон или чужди права. Може да спрем профил,
+      който върши това.
+    </p>
+
+    <h2>Планове и плащане</h2>
+    <p>
+      Безплатният план е с лимити. Платените планове (${formatPrice(PLANS.plus.monthly ?? 0)} и
+      ${formatPrice(PLANS.pro.monthly ?? 0)} на месец) се подновяват сами, докато не ги спреш от
+      Настройки → Плащане и фактури. Плащането минава през Stripe.
+    </p>
+    <p>
+      Отказ спира подновяването в края на текущия период; вече платеният период остава
+      достъпен. Като потребител в ЕС имаш право на отказ до 14 дни, освен ако услугата
+      вече е ползвана в този период.
+    </p>
+
+    <h2>Какво не обещаваме</h2>
+    <p>
+      Отговорите се съставят автоматично и може да са неточни или непълни. Затова всеки
+      идва с препратка — проверявай в източника, преди да се опреш на него. Записки не е
+      правен, медицински или финансов съвет. Услугата се предоставя „както е“, без
+      гаранция за непрекъсваемост.
+    </p>
+
+    <h2>Прекратяване</h2>
+    <p>
+      Можеш да изтриеш профила си по всяко време от Настройки — веднага и необратимо.
+      Можем да прекратим достъп при нарушение на тези условия.
+    </p>
+
+    <h2>Приложимо право</h2>
+    <p>
+      Българското законодателство и правото на ЕС. Спорове се решават от компетентния съд
+      в България, без това да ограничава правата ти като потребител.
+    </p>
+
+    <h2>Връзка</h2>
+    <p><a href={`mailto:${contact}`}>{contact}</a></p>
+
+    <p class="legal-foot"><a href="/">← Начало</a> · <a href="/privacy">Поверителност</a> · <a href="/contact">Контакт</a></p>
+  </article>
+</Base>
+
+<style>
+  .topline {
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 22px 26px 0;
+  }
+  .legal {
+    max-width: 68ch;
+    margin: 0 auto;
+    padding: 34px 26px 90px;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .legal h1 {
+    font-family: var(--font-serif);
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 6px;
+  }
+  .legal h2 {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 30px 0 8px;
+  }
+  .legal-date {
+    color: var(--faint);
+    font-size: 13px;
+    margin: 0 0 8px;
+  }
+  .legal ul {
+    padding-left: 20px;
+  }
+  .legal li {
+    margin-bottom: 6px;
+  }
+  .legal-foot {
+    margin-top: 44px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+  @media (max-width: 640px) {
+    .topline { padding: 16px 18px 0; }
+    .legal { padding: 24px 18px 60px; }
+    .legal h1 { font-size: 27px; }
+  }
+</style>

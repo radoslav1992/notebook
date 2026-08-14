@@ -137,6 +137,23 @@ export class Stripe {
     return this.#get<StripeSubscription>(`subscriptions/${id}`);
   }
 
+  /**
+   * Спира абонамента веднага.
+   *
+   * Ползва се само при изтриване на профил: там „в края на периода“ не върши
+   * работа, защото профилът, на който да се начисли, вече няма да съществува.
+   */
+  async cancelSubscription(id: string): Promise<StripeSubscription> {
+    const res = await fetch(`${this.#base}/subscriptions/${id}`, {
+      method: 'DELETE',
+      headers: {
+        authorization: `Bearer ${this.#key}`,
+        'stripe-version': '2025-03-31.basil',
+      },
+    });
+    return this.#unwrap<StripeSubscription>(res);
+  }
+
   async getCheckoutSession(id: string): Promise<StripeCheckoutSession> {
     return this.#get<StripeCheckoutSession>(`checkout/sessions/${id}`);
   }
