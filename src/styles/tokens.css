@@ -31,6 +31,12 @@
   --brand-hover: #5c1a24;
   --brand-tint: #f2e4e3;
 
+  /* Тревога. По-топло и по-светло от марката нарочно: марката е тъмно
+     бордо и само по себе си чете като „червено“, а тук червеното трябва
+     да значи „внимавай“, не „Записки“. */
+  --danger: #a3392b;
+  --danger-tint: #fbeceb;
+
   /* Типография */
   --font-sans: Manrope, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-serif: Spectral, Georgia, 'Times New Roman', serif;

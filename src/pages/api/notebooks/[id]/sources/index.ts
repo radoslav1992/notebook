@@ -9,6 +9,7 @@ import {
   ingestContext,
   json,
   requireNotebook,
+  requireVerified,
 } from '~/lib/api';
 import {
   HttpError,
@@ -35,6 +36,9 @@ export const GET: APIRoute = handler(async (ctx) => {
 export const POST: APIRoute = handler(async (ctx) => {
   const id = ctx.params.id!;
   let notebook = await requireNotebook(ctx, id);
+
+  // Качването плаща за вграждания, значи иска потвърден имейл като останалите.
+  requireVerified(ctx);
 
   // Моделите се сглобяват преди каквито и да е записи: липсващ ключ или
   // липсващ binding трябва да се разбере сега, а не да остави източник във

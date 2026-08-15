@@ -6,6 +6,7 @@ import {
   ragContext,
   readJson,
   requireNotebook,
+  requireVerified,
   selectedSources,
 } from '~/lib/api';
 import { HttpError, clearMessages, insertMessage, listMessages, touchNotebook } from '~/lib/db';
@@ -42,6 +43,7 @@ export const POST: APIRoute = handler(async (ctx) => {
   if (!question) throw new HttpError(400, 'Въпросът е празен.');
   if (question.length > 4000) throw new HttpError(400, 'Въпросът е твърде дълъг.');
 
+  requireVerified(ctx);
   await assertCanAsk(env.DB, ctx.locals.user.id);
 
   const [history, sources, rag] = await Promise.all([

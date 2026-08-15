@@ -1,0 +1,126 @@
+---
+import Base from '../layouts/Base.astro';
+import { DEFAULT_CONTACT_EMAIL, bareAddress } from '../lib/email';
+import '../styles/auth.css';
+import { env } from 'cloudflare:workers';
+
+export const prerender = false;
+
+const contact = bareAddress(env.CONTACT_EMAIL || DEFAULT_CONTACT_EMAIL);
+---
+
+<Base title="Поверителност — Записки" description="Какви данни събира Записки, къде стоят и как се изтриват.">
+  <div class="topline">
+    <a class="auth-brand" href="/" style="margin:0">
+      <span class="mark">З</span>
+      <span class="name">Записки</span>
+    </a>
+  </div>
+
+  <article class="legal">
+    <h1>Политика за поверителност</h1>
+    <p class="legal-date">Последна промяна: август 2026 г.</p>
+
+    <h2>Кой обработва данните</h2>
+    <p>
+      Записки („ние“) е администратор на лични данни по смисъла на GDPR. Връзка с нас:
+      <a href={`mailto:${contact}`}>{contact}</a>.
+    </p>
+
+    <h2>Какво събираме</h2>
+    <ul>
+      <li><strong>Профил</strong> — имейл, име (ако си го дал), начин на влизане.</li>
+      <li><strong>Съдържание</strong> — източниците, които качваш, въпросите и отговорите, бележките и аудио прегледите.</li>
+      <li><strong>Технически</strong> — сесии (само хеш на токена), броячи за месечните лимити, брояч на опитите за вход по IP.</li>
+      <li><strong>Плащане</strong> — обработва се изцяло от Stripe. Ние не виждаме и не пазим номера на карти.</li>
+    </ul>
+
+    <h2>Защо ги обработваме</h2>
+    <ul>
+      <li>За да работи услугата, за която си направил профил — <em>изпълнение на договор</em>.</li>
+      <li>За да не се злоупотребява с нея (лимити, брояч на опитите) — <em>законен интерес</em>.</li>
+      <li>За фактуриране, когато си на платен план — <em>правно задължение</em>.</li>
+    </ul>
+
+    <h2>Къде стоят</h2>
+    <p>
+      В инфраструктурата на Cloudflare (D1, R2, Vectorize) и в Workers. Съдържанието на
+      източниците ти се изпраща към доставчика на моделите — Google (Gemini API) и/или
+      Cloudflare Workers AI — единствено за да бъде обработено и върнат отговор.
+    </p>
+
+    <h2>Колко дълго</h2>
+    <p>
+      Докато съществува профилът ти. Изтриеш ли го, изтриваме източниците, разговорите,
+      бележките, аудиото и векторите. Данните за издадени фактури се пазят според
+      счетоводното законодателство.
+    </p>
+
+    <h2>Правата ти</h2>
+    <ul>
+      <li><strong>Достъп и преносимост</strong> — Настройки → „Изтегли данните си“ дава всичко в JSON.</li>
+      <li><strong>Изтриване</strong> — Настройки → „Изтрий профила“. Действа веднага и е необратимо.</li>
+      <li><strong>Корекция</strong> — името и настройките се редактират в Настройки.</li>
+      <li><strong>Възражение и жалба</strong> — пиши ни, а при спор може да сезираш Комисията за защита на личните данни.</li>
+    </ul>
+
+    <h2>Бисквитки</h2>
+    <p>
+      Само една, за да те държи вписан. Няма проследяване и няма реклама, затова няма и
+      банер за съгласие.
+    </p>
+
+    <p class="legal-foot"><a href="/">← Начало</a> · <a href="/terms">Условия</a> · <a href="/contact">Контакт</a></p>
+  </article>
+</Base>
+
+<style>
+  .topline {
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 22px 26px 0;
+  }
+  .legal {
+    max-width: 68ch;
+    margin: 0 auto;
+    padding: 34px 26px 90px;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .legal h1 {
+    font-family: var(--font-serif);
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 6px;
+  }
+  .legal h2 {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 30px 0 8px;
+  }
+  .legal-date {
+    color: var(--faint);
+    font-size: 13px;
+    margin: 0 0 8px;
+  }
+  .legal ul {
+    padding-left: 20px;
+  }
+  .legal li {
+    margin-bottom: 6px;
+  }
+  .legal-foot {
+    margin-top: 44px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+  @media (max-width: 640px) {
+    .topline { padding: 16px 18px 0; }
+    .legal { padding: 24px 18px 60px; }
+    .legal h1 { font-size: 27px; }
+  }
+</style>

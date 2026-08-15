@@ -151,6 +151,16 @@ button {
   border-color: var(--brand);
   color: var(--brand);
 }
+/* Необратимо действие. Не крещи, докато не се посегне към него — иначе окото
+   свиква с червеното и точно то спира да значи нещо. */
+.danger {
+  color: var(--danger);
+}
+.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-tint);
+}
 .btn[disabled] {
   opacity: 0.5;
   cursor: not-allowed;

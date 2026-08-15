@@ -14,6 +14,12 @@ const CHUNKS = [
   { id: 'cX', source_id: 's9', notebook_id: 'nbOTHER', ordinal: 0, page: 1, locator: 'стр. 1', text: 'Пасаж от чужда тетрадка.' },
 ];
 
+/**
+ * Кои пасажи да върне търсенето по думи. `null` значи „индексът не отговаря“ —
+ * така се проверява, че въпросът пак минава само с Vectorize.
+ */
+let keywordHits = [];
+
 const db = {
   prepare(sql) {
     const state = { sql, binds: [] };
@@ -23,6 +29,10 @@ const db = {
         if (/FROM chunks WHERE id IN/.test(state.sql)) {
           const want = new Set(state.binds);
           return { results: CHUNKS.filter((c) => want.has(c.id)) };
+        }
+        if (/FROM chunks_fts/.test(state.sql)) {
+          if (keywordHits === null) throw new Error('no such table: chunks_fts');
+          return { results: keywordHits.map((id) => ({ chunk_id: id })) };
         }
         throw new Error('unexpected sql: ' + state.sql);
       },
@@ -97,6 +107,33 @@ const block = buildContextBlock(got);
 assert.ok(block.startsWith('[1] Източник 4 · Лекция 4.docx · стр. 5\n'), block.slice(0, 80));
 assert.equal((block.match(/^\[\d\] Източник/gm) ?? []).length, 3);
 t('context block numbers passages the way the prompt asks the model to cite');
+
+/* ── Търсенето по думи ────────────────────────────────────────────────────── */
+
+// Точно случаят, заради който изобщо има второ търсене: пасаж, който Vectorize
+// нарежда последен, но буквалното съвпадение сочи пръв.
+keywordHits = ['c2'];
+const hybrid = await retrieve(ctx, 'nb1', 'справедлив преход', sources);
+assert.equal(hybrid[0].text, 'Справедлив преход като социална мярка.');
+t('a passage the keyword leg ranks first outranks the vector order');
+
+// Чуждата тетрадка и изключеният източник не бива да влизат и по този път.
+keywordHits = ['cX', 'c4', 'c1'];
+const guarded = await retrieve(ctx, 'nb1', 'каквото и да е', sources);
+assert.deepEqual(
+  guarded.filter((p) => p.text.includes('чужда') || p.text.includes('изключен')),
+  [],
+);
+t('keyword hits are filtered by notebook and selected sources too');
+
+// Непусната миграция не бива да поваля въпроса — само отнема буквалното
+// съвпадение. Иначе една забравена стъпка при deploy спира всички отговори.
+keywordHits = null;
+const degraded = await retrieve(ctx, 'nb1', 'Какви са целите за 2030?', sources);
+assert.deepEqual(degraded.map((p) => p.text), got.map((p) => p.text));
+t('an unavailable FTS index degrades to vector-only instead of failing');
+
+keywordHits = [];
 
 /* ── answerStream over the real SSE path ─────────────────────────────────── */
 
