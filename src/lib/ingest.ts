@@ -37,6 +37,13 @@ export async function ingestSource(ctx: IngestContext, source: Source): Promise<
     const extraction = await extract(ctx, source);
     const charCount = extraction.passages.reduce((n, p) => n + p.text.length, 0);
 
+    // Празно извличане е грешка, а не готов източник. Дотук такъв източник
+    // ставаше „готов“ с нула пасажа: отметнат в списъка, без нищо в индекса, а
+    // чатът отговаряше „в източниците няма отговор“ на всичко. Отговорът е верен,
+    // но причината не се вижда никъде и изглежда като счупен модел.
+    const thin = describeThinExtraction(source.kind, extraction.passages.length, charCount);
+    if (thin) throw new Error(thin);
+
     if (ctx.backend === 'gemini' && ctx.storeName) {
       await indexWithFileSearch(ctx, source, extraction);
     } else {
@@ -202,8 +209,36 @@ async function indexWithFileSearch(
 /* ── помощни ─────────────────────────────────────────────────────────────── */
 
 /** Подредът под името на източника: „48 стр. · добавен вчера“. */
+/**
+ * Защо от източника не излезе използваем текст — или `null`, ако всичко е добре.
+ *
+ * Прагът за уеб страница е нарочно по-висок от нула. Най-честият случай не е
+ * празна страница, а страница, която се сглобява в браузъра: извличането тегли
+ * HTML и не изпълнява JavaScript, тоест от React или Vue сайт се връща само
+ * обвивката — няколко десетки знака от `<title>` и нищо друго. Технически „има
+ * текст“, практически няма на какво да се отговаря.
+ *
+ * За останалите видове прагът е нула: там къс текст е нарочен (кратка бележка,
+ * едностраничен документ) и не бива да се отказва.
+ */
+export function describeThinExtraction(
+  kind: SourceKind,
+  passages: number,
+  charCount: number,
+): string | null {
+  if (kind === 'WEB' && charCount < 200) {
+    return 'От страницата не излезе текст. Най-често значи, че съдържанието се зарежда с JavaScript, а тук се чете само HTML-ът. Отвори страницата, копирай текста и го добави като източник „Текст“.';
+  }
+  if (passages === 0 || charCount === 0) {
+    return 'От този източник не излезе никакъв текст. Провери дали файлът не е празен или защитен.';
+  }
+  return null;
+}
+
 function describeSource(kind: SourceKind, extraction: Extraction, charCount: number): string {
-  if (kind === 'WEB') return 'уеб страница';
+  // Размерът се показва и за уеб страница: дотук пишеше само „уеб страница“, тоест
+  // тънка страница изглеждаше точно като пълна.
+  if (kind === 'WEB') return `уеб · ${Math.max(1, Math.round(charCount / 1000))} хил. знака`;
   if (kind === 'YT' || kind === 'AUD') {
     const last = extraction.passages[extraction.passages.length - 1];
     const seconds = last?.page ?? 0;
