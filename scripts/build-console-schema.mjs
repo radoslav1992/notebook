@@ -13,7 +13,11 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dir = join(root, 'migrations');
-const out = join(dir, 'console-schema.sql');
+// Нарочно НЕ е в migrations/: wrangler брои всеки .sql там за миграция, а този
+// файл е всички миграции наведнъж. Стоеше ли вътре, `d1 migrations apply` се
+// проваля с „duplicate column name“ при всяко пускане — и то накрая, след като
+// истинските миграции вече са минали, тоест изглежда като счупен deploy.
+const out = join(root, 'docs', 'console-schema.sql');
 
 const files = readdirSync(dir)
   .filter((f) => /^\d+.*\.sql$/.test(f))
@@ -67,4 +71,4 @@ parts.push(
 );
 
 writeFileSync(out, parts.join('\n'));
-console.log(`migrations/console-schema.sql ← ${files.join(', ')}`);
+console.log(`docs/console-schema.sql ← ${files.join(', ')}`);

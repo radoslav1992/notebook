@@ -40,7 +40,7 @@ dashboard-а на Cloudflare и GitHub.
 workflow-ът от стъпка 4, който също ги прави.
 
 1. Отвори базата `zapiski` → таб **Console**.
-2. Отвори [`migrations/console-schema.sql`](../migrations/console-schema.sql) в
+2. Отвори [`docs/console-schema.sql`](console-schema.sql) в
    GitHub, натисни **Copy raw file** и постави всичко в полето.
 3. **Execute**.
 4. В таб **Tables** трябва да се появят 17 таблици: `users`, `sessions`,
