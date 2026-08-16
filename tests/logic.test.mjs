@@ -6,6 +6,7 @@ const { parseTurns, groupTurns } = await import('../src/lib/studio.ts');
 const { extractCitations, stripCitationMarkers, citationLabel, shortName } = await import('../src/lib/rag.ts');
 const { pcmToWav, pcmDuration, formatDuration, concatPcm } = await import('../src/lib/audio/wav.ts');
 const { translateGoogleError } = await import('../src/lib/gemini.ts');
+const { describeThinExtraction } = await import('../src/lib/ingest.ts');
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -174,6 +175,26 @@ t('a model retired for new keys says where to change it and why not the dashboar
 });
 t('an unrecognised message is passed through rather than swallowed', () => {
   assert.equal(translateGoogleError(400, 'Something entirely new'), 'Something entirely new');
+});
+
+console.log('празни източници');
+t('a JS-rendered page is refused instead of becoming an empty source', () => {
+  // Точният случай, който изглежда като счупен чат: страницата се сглобява в
+  // браузъра, извличането вижда само обвивката, източникът става „готов“ с нула
+  // пасажа и после на всеки въпрос отговорът е „в източниците няма отговор“.
+  const out = describeThinExtraction('WEB', 1, 80);
+  assert.ok(out, 'тънка уеб страница трябва да се откаже');
+  assert.ok(out.includes('JavaScript'), 'трябва да каже защо: ' + out);
+  assert.ok(out.includes('Текст'), 'и какво да направи човекът: ' + out);
+});
+t('a real page passes', () => {
+  assert.equal(describeThinExtraction('WEB', 12, 9000), null);
+});
+t('other kinds are refused only when truly empty', () => {
+  // Къс текст в бележка е нарочен и не бива да се отказва.
+  assert.equal(describeThinExtraction('TXT', 1, 90), null);
+  assert.ok(describeThinExtraction('PDF', 0, 0));
+  assert.ok(describeThinExtraction('TXT', 0, 0));
 });
 
 console.log('\n' + pass + ' assertions passed');

@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { ai, env, handler, json } from '~/lib/api';
-import { requireGoogleFeature } from '~/lib/ai';
+import { providerFor } from '~/lib/ai';
 
 export const prerender = false;
 
@@ -19,24 +19,52 @@ export const prerender = false;
  */
 export const GET: APIRoute = handler(async (ctx) => {
   const bundle = ai(ctx);
-  const google = requireGoogleFeature(bundle, 'Списъкът с моделите на Google');
-  const all = await google.listModels();
 
+  /**
+   * Какво ползва приложението точно сега.
+   *
+   * Излиза ПРЕДИ да се пита Google, и без него. Иначе точно инсталацията, минала
+   * на Cloudflare, не може да провери на какво работи: няма ключ → заявката
+   * гърми → не се вижда нито един от трите модела. А това е единственото място,
+   * което ги казва.
+   */
+  const configured = {
+    chat: bundle.chat.model,
+    embed: bundle.embed.model,
+    embedDimensions: bundle.embed.dimensions,
+    tts: bundle.tts.model,
+    /** Кой доставчик поема всяка роля — това решава името на модела. */
+    provider: {
+      chat: providerFor(bundle.chat.model),
+      embed: providerFor(bundle.embed.model),
+      tts: providerFor(bundle.tts.model),
+    },
+    /** Има ли ключ за Google: без него YouTube, аудио и File Search отказват. */
+    googleKey: Boolean(bundle.google),
+    // Стойностите както са зададени. Показват се, за да се вижда кога работи
+    // резервната от кода, вместо зададената — празно тук значи точно това.
+    chatVar: env.CHAT_MODEL ?? null,
+    chatProVar: env.CHAT_MODEL_PRO ?? null,
+    embedVar: env.EMBED_MODEL ?? null,
+    ttsVar: env.TTS_MODEL ?? null,
+  };
+
+  // Списъкът с моделите е на Google и иска ключ. Липсва ли — казваме го, но
+  // горното си остава.
+  if (!bundle.google) {
+    return json({
+      configured,
+      usable: null,
+      note: 'Списъкът с моделите на Google иска GEMINI_API_KEY. Зададените по-горе модели работят и без него, ако името им сочи Cloudflare.',
+    });
+  }
+
+  const all = await bundle.google.listModels();
   const has = (m: { methods: string[] }, method: string) => m.methods.includes(method);
   const shape = (m: (typeof all)[number]) => ({ id: m.id, name: m.displayName });
 
   return json({
-    /** Какво ползва приложението точно сега — сравни с групите отдолу. */
-    configured: {
-      chat: bundle.chat.model,
-      embed: bundle.embed.model,
-      embedDimensions: bundle.embed.dimensions,
-      tts: bundle.tts.model,
-      // Тези две идват от vars в wrangler.jsonc. Стойност, въведена в
-      // dashboard-а, се заменя при следващия deploy — затова се показват тук.
-      chatVar: env.CHAT_MODEL ?? null,
-      chatProVar: env.CHAT_MODEL_PRO ?? null,
-    },
+    configured,
     usable: {
       /** Годни за CHAT_MODEL и CHAT_MODEL_PRO. */
       chat: all.filter((m) => has(m, 'generateContent')).map(shape),
