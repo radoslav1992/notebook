@@ -60,18 +60,25 @@ export async function retrieve(
     fused.map((f) => f.id),
   );
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const byOrdinal = new Map(sources.map((s) => [s.id, s]));
-  const allowed = new Set(sources.map((s) => s.id));
+  /**
+   * Разрешените източници — и преградата, и таблицата за имената им.
+   *
+   * Нарочно е ЕДНА структура. Имаше и отделен `Set` с позволените,
+   * но той се строеше от същия списък, тоест проверката с него не можеше да
+   * се провали, докато тази отдолу минава. Изглеждаше като преграда, без да е —
+   * а два източника на една истина се разминават точно когато някой добави
+   * трети вид достъп (обща библиотека например) и допише само единия.
+   */
+  const bySource = new Map(sources.map((s) => [s.id, s]));
 
   const kept: Retrieved[] = [];
   for (const f of fused) {
     const row = byId.get(f.id);
     if (!row) continue;
-    // Проверката остава и след стесняването в двете търсения: тя е последната
-    // преграда пасаж от чужда тетрадка да влезе в контекста на модела.
+    // Последната преграда преди контекста на модела. Пази и след стесняването в
+    // двете търсения, защото то е оптимизация — това е преградата.
     if (row.notebook_id !== notebookId) continue;
-    if (!allowed.has(row.source_id)) continue;
-    const source = byOrdinal.get(row.source_id);
+    const source = bySource.get(row.source_id);
     if (!source) continue;
     kept.push({
       index: kept.length + 1,
