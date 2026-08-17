@@ -28,14 +28,14 @@ export const prerender = false;
 
 export const GET: APIRoute = handler(async (ctx) => {
   const id = ctx.params.id!;
-  await requireNotebook(ctx, id);
+  await requireNotebook(ctx, id, { library: 'read' });
   const sources = await listSources(env.DB, id);
   return json({ sources });
 });
 
 export const POST: APIRoute = handler(async (ctx) => {
   const id = ctx.params.id!;
-  let notebook = await requireNotebook(ctx, id);
+  let notebook = await requireNotebook(ctx, id, { library: 'write' });
 
   // Качването плаща за вграждания, значи иска потвърден имейл като останалите.
   requireVerified(ctx);

@@ -166,6 +166,36 @@ ${link}
   };
 }
 
+/** Покана в организация. Казва КОЙ кани и КЪДЕ — иначе изглежда като фишинг. */
+export function inviteEmail(input: {
+  orgName: string;
+  invitedBy: string;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const who = input.invitedBy ? ` от ${input.invitedBy}` : '';
+  return {
+    subject: `Покана за „${input.orgName}“ в Записки`,
+    text: `Здравей,
+
+Получаваш покана${who} да се присъединиш към „${input.orgName}“ в Записки.
+Като член ще можеш да ползваш общите източници на организацията в своите тетрадки.
+
+${input.link}
+
+Връзката важи 14 дни и е само за твоя имейл. Ако не очакваш това, изтрий писмото.
+
+— Записки`,
+    html: shell(
+      `Покана за „${escapeHtml(input.orgName)}“`,
+      `<p>Получаваш покана${who ? ` от <strong>${escapeHtml(input.invitedBy)}</strong>` : ''} да се присъединиш към <strong>${escapeHtml(input.orgName)}</strong>.</p>
+       <p>Като член ще можеш да ползваш общите източници на организацията в своите тетрадки.</p>`,
+      input.link,
+      'Приеми поканата',
+      'Връзката важи 14 дни и е само за твоя имейл. Ако не очакваш това, изтрий писмото.',
+    ),
+  };
+}
+
 export function resetEmail(link: string): { subject: string; html: string; text: string } {
   return {
     subject: 'Нова парола за Записки',

@@ -1,0 +1,234 @@
+/**
+ * Организации: създаване, покани, роли.
+ *
+ * Библиотеката на организацията е тетрадка с `kind='library'` (виж миграция
+ * 0005). Тук е единственото място, което я създава и което решава кой има право
+ * да пише в нея.
+ */
+
+import { HttpError, listMemberships, roleInLibrary, type OrgRole } from './db';
+import { newId, now } from './ids';
+import { normalizeEmail, sha256 } from './auth';
+
+const INVITE_TTL_MS = 14 * 24 * 60 * 60_000;
+
+/** Ролите, които могат да качват в библиотеката. Членът само чете. */
+const CAN_WRITE: OrgRole[] = ['owner', 'admin'];
+
+export interface Org {
+  id: string;
+  name: string;
+  role: OrgRole;
+  libraryId: string;
+}
+
+/**
+ * Създава организация с нейната библиотека и прави създателя собственик.
+ *
+ * Библиотеката е тетрадка и затова носи `user_id` — създателят. Това е
+ * счетоводна собственост, не лична: тя не се брои в квотата му, не излиза в
+ * личните му списъци и `getNotebook` не я връща (виж 0005 и `db.ts`). Тръгне ли
+ * си човекът, тетрадката се прехвърля на друг собственик — виж
+ * `releaseOrgsOfUser`.
+ */
+export async function createOrg(
+  db: D1Database,
+  userId: string,
+  name: string,
+): Promise<Org> {
+  const clean = name.trim();
+  if (clean.length < 2) throw new HttpError(400, 'Името на организацията е твърде кратко.');
+  if (clean.length > 80) throw new HttpError(400, 'Името на организацията е твърде дълго.');
+
+  const orgId = newId('org');
+  const libraryId = newId('nb');
+  const ts = now();
+
+  await db.batch([
+    db
+      .prepare('INSERT INTO organizations (id, name, created_at) VALUES (?, ?, ?)')
+      .bind(orgId, clean, ts),
+    db
+      .prepare(
+        `INSERT INTO org_members (org_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)`,
+      )
+      .bind(orgId, userId, ts),
+    db
+      .prepare(
+        `INSERT INTO notebooks (id, user_id, emoji, title, blurb, org_id, kind, created_at, updated_at)
+         VALUES (?, ?, '🏛️', ?, '', ?, 'library', ?, ?)`,
+      )
+      .bind(libraryId, userId, `Библиотека — ${clean}`, orgId, ts, ts),
+  ]);
+
+  return { id: orgId, name: clean, role: 'owner', libraryId };
+}
+
+/** Организациите на човека, само тези с готова библиотека. */
+export async function listOrgs(db: D1Database, userId: string): Promise<Org[]> {
+  const memberships = await listMemberships(db, userId);
+  return memberships
+    .filter((m): m is typeof m & { libraryId: string } => Boolean(m.libraryId))
+    .map((m) => ({ id: m.orgId, name: m.name, role: m.role, libraryId: m.libraryId }));
+}
+
+/**
+ * Ролята на човека върху дадена библиотека, или отказ.
+ *
+ * `write: true` изисква owner/admin. Всяко пипане по съдържанието на
+ * библиотеката минава оттук — иначе проверката се разпилява по маршрутите и
+ * някой я пропуска.
+ */
+export async function requireLibraryRole(
+  db: D1Database,
+  userId: string,
+  libraryId: string,
+  opts: { write?: boolean } = {},
+): Promise<OrgRole> {
+  const role = await roleInLibrary(db, userId, libraryId);
+  if (!role) throw new HttpError(404, 'Библиотеката не е намерена.');
+  if (opts.write && !CAN_WRITE.includes(role)) {
+    throw new HttpError(403, 'Само собственик или администратор може да добавя източници в библиотеката.');
+  }
+  return role;
+}
+
+/* ── Покани ──────────────────────────────────────────────────────────────── */
+
+export interface Invite {
+  token: string;
+  email: string;
+  role: OrgRole;
+  expiresAt: number;
+}
+
+/** Прави покана и връща токена — вика се веднъж, после токенът не е достъпен. */
+export async function inviteToOrg(
+  db: D1Database,
+  input: { orgId: string; invitedBy: string; email: string; role: OrgRole },
+): Promise<Invite> {
+  const email = normalizeEmail(input.email);
+  if (!email.includes('@')) throw new HttpError(400, 'Имейлът не изглежда валиден.');
+  if (input.role === 'owner') {
+    throw new HttpError(400, 'Собственик не се задава с покана.');
+  }
+
+  const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+  const expiresAt = now() + INVITE_TTL_MS;
+
+  await db
+    .prepare(
+      `INSERT INTO org_invites (token_hash, org_id, email, role, invited_by, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(await sha256(token), input.orgId, email, input.role, input.invitedBy, now(), expiresAt)
+    .run();
+
+  return { token, email, role: input.role, expiresAt };
+}
+
+/**
+ * Приема покана. Връща организацията, в която човекът вече е член.
+ *
+ * Три проверки, и трите нужни:
+ *  • токенът съществува и не е изтекъл;
+ *  • не е ползван — иначе една връзка вкарва целия курс;
+ *  • имейлът на влезлия съвпада с този на поканата — иначе препратена връзка
+ *    вкарва произволен човек в чужда библиотека.
+ */
+export async function acceptInvite(
+  db: D1Database,
+  user: { id: string; email: string | null },
+  token: string,
+): Promise<{ orgId: string; name: string; role: OrgRole }> {
+  const row = await db
+    .prepare(
+      `SELECT i.org_id, i.email, i.role, i.expires_at, i.used_at, o.name
+       FROM org_invites i JOIN organizations o ON o.id = i.org_id
+       WHERE i.token_hash = ?`,
+    )
+    .bind(await sha256(token))
+    .first<{
+      org_id: string;
+      email: string;
+      role: string;
+      expires_at: number;
+      used_at: number | null;
+      name: string;
+    }>();
+
+  if (!row) throw new HttpError(404, 'Поканата не е намерена.');
+  if (row.used_at) throw new HttpError(409, 'Поканата вече е използвана.');
+  if (row.expires_at <= now()) throw new HttpError(410, 'Поканата е изтекла. Поискай нова.');
+  if (normalizeEmail(user.email ?? '') !== row.email) {
+    throw new HttpError(
+      403,
+      `Поканата е за ${row.email}. Влез с този имейл, за да я приемеш.`,
+    );
+  }
+
+  const ts = now();
+  await db.batch([
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO org_members (org_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
+      )
+      .bind(row.org_id, user.id, row.role, ts),
+    db.prepare('UPDATE org_invites SET used_at = ? WHERE token_hash = ?').bind(ts, await sha256(token)),
+  ]);
+
+  return { orgId: row.org_id, name: row.name, role: row.role as OrgRole };
+}
+
+/* ── Напускащ човек ──────────────────────────────────────────────────────── */
+
+/**
+ * Разплита организациите на човек, който се изтрива по GDPR.
+ *
+ * Без това библиотеката изчезва заедно с профила на създателя си — тя носи
+ * неговия `user_id` — и организацията остава с празни ръце, макар останалите
+ * членове да не са направили нищо.
+ *
+ * Затова: последният собственик отнася организацията със себе си (тя няма кой да
+ * я управлява), а иначе библиотеките му се прехвърлят на друг собственик или
+ * администратор.
+ *
+ * Вика се ПРЕДИ изтриването на редовете, докато членството още се вижда.
+ */
+export async function releaseOrgsOfUser(db: D1Database, userId: string): Promise<void> {
+  const { results: orgs } = await db
+    .prepare('SELECT org_id, role FROM org_members WHERE user_id = ?')
+    .bind(userId)
+    .all<{ org_id: string; role: string }>();
+
+  for (const org of orgs ?? []) {
+    const heir = await db
+      .prepare(
+        `SELECT user_id FROM org_members
+         WHERE org_id = ? AND user_id != ? AND role IN ('owner', 'admin')
+         ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, created_at
+         LIMIT 1`,
+      )
+      .bind(org.org_id, userId)
+      .first<{ user_id: string }>();
+
+    if (!heir) {
+      // Няма кой да поеме: организацията си отива, а с нея и библиотеката —
+      // каскадно през `notebooks.org_id`.
+      await db.prepare('DELETE FROM organizations WHERE id = ?').bind(org.org_id).run();
+      continue;
+    }
+
+    await db
+      .prepare(
+        `UPDATE notebooks SET user_id = ?
+         WHERE org_id = ? AND kind = 'library' AND user_id = ?`,
+      )
+      .bind(heir.user_id, org.org_id, userId)
+      .run();
+    await db
+      .prepare(`UPDATE org_members SET role = 'owner' WHERE org_id = ? AND user_id = ?`)
+      .bind(org.org_id, heir.user_id)
+      .run();
+  }
+}
