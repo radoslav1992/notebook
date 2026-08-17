@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "zapiski",
+  "keep_vars": true,
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
 
@@ -87,11 +88,21 @@
 
   // ── Variables live in the DASHBOARD, not here ────────────────────────────
   //
-  // This file deliberately sets NO vars. Every `wrangler deploy` replaces the
-  // worker's plain-text variables with whatever `vars` contains, so a value
-  // shipped here would silently revert anything typed into
-  // Settings → Variables and Secrets. With the block gone, the dashboard is the
-  // only place they live and nothing overwrites it.
+  // This file sets no vars, and `keep_vars: true` at the top is what makes that
+  // safe. Both halves are needed, and neither is enough alone:
+  //
+  //   • A value shipped here would silently revert whatever is typed into
+  //     Settings → Variables and Secrets, because a deploy replaces the worker's
+  //     plain-text variables with whatever `vars` contains.
+  //   • Removing the block is NOT enough on its own. The Astro adapter emits
+  //     `vars: {}` into dist/server/wrangler.json — an empty object, not an
+  //     absent one — and an empty set means "delete them all". That is why
+  //     CHAT_MODEL kept vanishing after every deploy.
+  //
+  // `keep_vars` tells the deploy to leave the existing variables alone. It is set
+  // here rather than as a `--keep-vars` flag on purpose: it survives into the
+  // generated config, so it also holds for deploys through Cloudflare Workers
+  // Builds, where the command is not ours to pass flags to.
   //
   // Each one has a default in code, so a fresh clone runs with none of them set:
   //
