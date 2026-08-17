@@ -287,6 +287,8 @@ export default function Workspace(props: Props) {
           onToggleAll={toggleAll}
           onRemove={removeSource}
           onAdd={() => setAddOpen(true)}
+          notebookId={notebook.id}
+          onLibraryChange={refreshSources}
         />
 
         <ChatPanel

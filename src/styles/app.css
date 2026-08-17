@@ -1443,3 +1443,19 @@
     height: calc(100vh - 48px);
   }
 }
+
+/* ── Общи източници от библиотека на организация ─────────────────────────── */
+
+.src-shared {
+  border-bottom: 1px dashed var(--line-dashed);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+.src-shared-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 6px 22px 4px;
+}

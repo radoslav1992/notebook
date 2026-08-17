@@ -31,6 +31,10 @@ t('the app and everything it writes through needs an account', () => {
     '/api/notebooks/nb_123/library',
     // Приемането на покана иска профил — поканата се връзва за имейла на влезлия.
     '/join',
+    // Библиотеката се чете само от членове; проверката за роля е в страницата,
+    // но без вход дори до нея не се стига.
+    '/app/library/nb_1',
+    '/api/orgs/org_1/members',
   ]) {
     assert.equal(classifyRoute(p), 'guarded', p);
   }

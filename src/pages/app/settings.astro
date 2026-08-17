@@ -3,10 +3,12 @@ import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import Chrome from '../../components/Chrome.astro';
 import AccountPanel from '../../components/AccountPanel';
+import OrgPanel from '../../components/OrgPanel';
 import SettingsView from '../../components/SettingsView';
 import { getSettings } from '../../lib/db';
 import { getEntitlement, getUsage } from '../../lib/limits';
 import { modelChoices } from '../../lib/ai/choices';
+import { mailer } from '../../lib/email';
 import '../../styles/app.css';
 import '../../styles/auth.css';
 
@@ -61,6 +63,8 @@ const checkout = Astro.url.searchParams.get('checkout');
       googleEnabled={Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET)}
       client:load
     />
+
+    <OrgPanel emailEnabled={mailer(env).enabled} client:load />
 
     <SettingsView
       settings={settings}
