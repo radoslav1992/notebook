@@ -97,8 +97,16 @@ await saveSubscription(db, U, {
 ent = await getEntitlement(db, U);
 assert.equal(ent.plan.id, 'plus');
 assert.equal(ent.interval, 'year');
-assert.equal(ent.plan.limits.proModel, true);
+assert.equal(ent.plan.limits.questionsPerMonth, 1000);
 t('a saved subscription grants its plan');
+
+// Нарочно е false и при трите плана, а не пропуск: по-скъпият модел няма СВОЙ
+// брояч, тоест платен потребител може да мине целия си таван по него и да излезе
+// по-скъп от абонамента си. Върне ли се на true, това пак става възможно.
+for (const id of ['free', 'plus', 'pro']) {
+  assert.equal(PLANS[id].limits.proModel, false, id);
+}
+t('no plan unlocks the pricier model while it has no counter of its own');
 
 // past_due still counts as paid — a failed card must not lock people out at once.
 await saveSubscription(db, U, {

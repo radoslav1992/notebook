@@ -4,6 +4,8 @@ import {
   type BillingInterval,
   type Plan,
   type PlanId,
+  BUSINESS,
+  CURRENCY_SYMBOL,
   formatPrice,
   monthlyEquivalent,
 } from '~/lib/plans';
@@ -119,6 +121,31 @@ export default function PricingTable({ plans, currentPlan, billingEnabled, signe
             </div>
           );
         })}
+      </div>
+
+      {/* Бизнес планът е отделно, защото не се купува с бутон: цената е на място и
+          върви по фактура. Карта с „Вземи“ би обещала поток, който още го няма. */}
+      <div class="plan-card business">
+        <div class="plan-name">{BUSINESS.name}</div>
+        <div class="plan-price">
+          <span class="amount">
+            {CURRENCY_SYMBOL}
+            {(BUSINESS.perSeatMonthly / 100).toFixed(0)}
+          </span>
+          <span class="per">/ място на месец</span>
+        </div>
+        <div class="plan-tagline">
+          {BUSINESS.tagline} Минимум {BUSINESS.minSeats} места.
+        </div>
+        <ul class="plan-features">
+          {BUSINESS.features.map((f) => (
+            <li key={f}>{f}</li>
+          ))}
+        </ul>
+        <div class="grow" />
+        <a class="btn plan-cta btn-ghost" href="/contact?tema=бизнес">
+          Пиши ни
+        </a>
       </div>
     </>
   );
