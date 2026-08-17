@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env, handler, json, readJson } from '~/lib/api';
 import { getSettings, saveProfile, saveSettings } from '~/lib/db';
 import { initialsOf } from '~/lib/auth';
+import { USE_CASES } from '~/lib/prompts';
 import { modelChoices } from '~/lib/ai/choices';
 
 export const prerender = false;
@@ -27,12 +28,16 @@ export const GET: APIRoute = handler(async (ctx) => {
   });
 });
 
+/** Празното е валидно: значи „питай ме пак“. */
+const ALLOWED_USE_CASES = ['', ...USE_CASES.map((u) => u.value)] as string[];
+
 export const PATCH: APIRoute = handler(async (ctx) => {
   const body = await readJson<{
     responseLanguage?: string;
     offlineMode?: boolean;
     chatModel?: string;
     displayName?: string;
+    useCase?: string;
   }>(ctx.request);
 
   const patch: Parameters<typeof saveSettings>[2] = {};
@@ -41,6 +46,11 @@ export const PATCH: APIRoute = handler(async (ctx) => {
   }
   if (typeof body.offlineMode === 'boolean') patch.offlineMode = body.offlineMode;
   if (body.chatModel && allowedModels().includes(body.chatModel)) patch.chatModel = body.chatModel;
+  // Само от познатите: стойността избира кои подсказки се пускат, тоест
+  // произволен низ значи неутралния набор без някой да разбере защо.
+  if (body.useCase !== undefined && ALLOWED_USE_CASES.includes(body.useCase)) {
+    patch.useCase = body.useCase;
+  }
   await saveSettings(env.DB, ctx.locals.user.id, patch);
 
   let user = ctx.locals.user;

@@ -47,6 +47,7 @@ const openAdd = Astro.url.searchParams.get('add') === '1';
     audioJob={audioJob}
     mindmap={mindmap}
     model={settings.chatModel}
+    useCase={settings.useCase}
     openAddOnMount={openAdd}
     client:load
   />

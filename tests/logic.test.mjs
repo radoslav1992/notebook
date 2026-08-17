@@ -7,6 +7,7 @@ const { extractCitations, stripCitationMarkers, citationLabel, shortName } = awa
 const { pcmToWav, pcmDuration, formatDuration, concatPcm } = await import('../src/lib/audio/wav.ts');
 const { translateGoogleError } = await import('../src/lib/gemini.ts');
 const { describeThinExtraction } = await import('../src/lib/ingest.ts');
+const { STUDIO_TASKS, USE_CASES, tilesFor } = await import('../src/lib/prompts.ts');
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -175,6 +176,54 @@ t('a model retired for new keys says where to change it and why not the dashboar
 });
 t('an unrecognised message is passed through rather than swallowed', () => {
   assert.equal(translateGoogleError(400, 'Something entirely new'), 'Something entirely new');
+});
+
+console.log('материали по употреба');
+t('every profile gets exactly four tiles, all of them real tasks', () => {
+  // Сгрешен ключ не гърми — плочката просто се показва празна, защото
+  // STUDIO_TASKS[key] е undefined. Затова се проверява, че всеки съществува.
+  for (const useCase of ['', 'study', 'legal', 'research', 'work', 'нещо-друго']) {
+    const tiles = tilesFor(useCase);
+    assert.equal(tiles.length, 4, useCase);
+    for (const key of tiles) {
+      assert.ok(STUDIO_TASKS[key], `${useCase}: няма задача „${key}“`);
+      assert.ok(STUDIO_TASKS[key].title, `${useCase}: задачата „${key}“ е без заглавие`);
+    }
+  }
+});
+
+t('the exam and study-guide pair shows up only for studying', () => {
+  // Точно това видя юристът и реши, че приложението не е за него.
+  assert.ok(tilesFor('study').includes('exam'));
+  assert.ok(tilesFor('study').includes('study_guide'));
+  for (const other of ['', 'legal', 'research', 'work']) {
+    assert.ok(!tilesFor(other).includes('exam'), other);
+    assert.ok(!tilesFor(other).includes('study_guide'), other);
+  }
+});
+
+t('each profile has one tile the others do not', () => {
+  const special = { study: 'exam', legal: 'obligations', research: 'review', work: 'actions' };
+  for (const [useCase, key] of Object.entries(special)) {
+    assert.ok(tilesFor(useCase).includes(key), `${useCase} → ${key}`);
+    for (const other of Object.keys(special)) {
+      if (other !== useCase) assert.ok(!tilesFor(other).includes(key), `${other} не бива да има ${key}`);
+    }
+  }
+});
+
+t('an unknown value falls back to the neutral set, not to nothing', () => {
+  // Стойността идва от базата; стар или подправен ред не бива да оставя студиото празно.
+  assert.deepEqual(tilesFor('какво-е-това'), tilesFor(''));
+  assert.deepEqual(tilesFor(undefined), tilesFor(''));
+});
+
+t('every offered profile is actually handled', () => {
+  // Добавен избор в USE_CASES без клон в tilesFor значи човек, който избира нещо
+  // и получава общите материали, без да разбере защо.
+  for (const u of USE_CASES) {
+    assert.notDeepEqual(tilesFor(u.value), tilesFor(''), u.value);
+  }
 });
 
 console.log('празни източници');

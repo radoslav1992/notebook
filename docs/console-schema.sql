@@ -9,7 +9,7 @@
 --   wrangler d1 migrations apply zapiski --remote
 -- без да ти трябва терминал.
 --
--- Съдържа: 0001_init.sql, 0002_auth_billing.sql, 0003_hybrid_search.sql, 0004_foreign_keys.sql, 0005_organizations.sql, 0006_org_invites.sql
+-- Съдържа: 0001_init.sql, 0002_auth_billing.sql, 0003_hybrid_search.sql, 0004_foreign_keys.sql, 0005_organizations.sql, 0006_org_invites.sql, 0007_use_case.sql
 -- ─────────────────────────────────────────────────────────────────────────
 
 -- Таблицата, с която wrangler помни какво вече е приложено. Пълни се накрая,
@@ -460,6 +460,20 @@ CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites(org_id);
 CREATE INDEX IF NOT EXISTS idx_org_invites_email ON org_invites(email);
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- 0007_use_case.sql
+-- ═══════════════════════════════════════════════════════════════════════
+
+/* ── За какво се ползва приложението ──────────────────────────────────────
+ * Сменя КОИ материали предлага студиото и какво пише в подсказките им — юрист,
+ * който вижда „Въпроси за изпит“, решава, че приложението не е за него, и е прав,
+ * защото зад бутона наистина стои изпитна подсказка.
+ *
+ * Празно значи „още не е питан“ и дава неутралния набор. Тоест съществуващите
+ * профили не се променят, докато сами не изберат.
+ */
+ALTER TABLE settings ADD COLUMN use_case TEXT NOT NULL DEFAULT '';
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- Отбелязваме миграциите като приложени.
 -- ═══════════════════════════════════════════════════════════════════════
 
@@ -469,3 +483,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0003_hybrid_search.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0004_foreign_keys.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0005_organizations.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0006_org_invites.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0007_use_case.sql');

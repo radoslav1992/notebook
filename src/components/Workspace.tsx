@@ -19,6 +19,7 @@ interface Props {
   audioJob: StudioJob | null;
   mindmap: Mindmap | null;
   model: string;
+  useCase: string;
   openAddOnMount: boolean;
 }
 
@@ -308,6 +309,7 @@ export default function Workspace(props: Props) {
 
         <StudioPanel
           notes={notes}
+          useCase={props.useCase}
           audioJob={audioJob}
           busyTask={busyTask}
           canGenerate={canGenerate}
