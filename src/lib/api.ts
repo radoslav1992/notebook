@@ -9,7 +9,7 @@ import {
   resolveChatModel,
   type Ai,
 } from './ai';
-import { HttpError, getNotebook, getSettings, listSources } from './db';
+import { HttpError, getNotebook, getSettings, listAllowedSources } from './db';
 import { mailer } from './email';
 import { getEntitlement } from './limits';
 import type { RagContext } from './rag';
@@ -184,9 +184,16 @@ export function ingestContext(ctx: APIContext, notebook: Notebook): IngestContex
   };
 }
 
-/** Избраните и вече обработени източници — тези, по които може да се отговаря. */
-export async function selectedSources(notebookId: string): Promise<Source[]> {
-  const all = await listSources(env.DB, notebookId);
+/**
+ * Избраните и вече обработени източници — тези, по които може да се отговаря.
+ *
+ * Включва и източниците от библиотека на организация, добавени в тетрадката.
+ * Минава през `listAllowedSources`, защото там е проверката за членство: това е
+ * единственото място, което решава кой източник е разрешен, а извличането само
+ * се доверява на резултата.
+ */
+export async function selectedSources(ctx: APIContext, notebookId: string): Promise<Source[]> {
+  const all = await listAllowedSources(env.DB, ctx.locals.user.id, notebookId);
   return all.filter((s) => s.selected && s.status === 'ready');
 }
 

@@ -29,12 +29,17 @@ export interface RagContext {
 
 const TOP_K = 10;
 const OVERFETCH = 30;
+/**
+ * До колко източника се стеснява още в индекса. Над това `$in` става дълъг, а
+ * таванът му при Vectorize не е обещан — затова минаваме на широко търсене и
+ * отсяване в кода, което и без това е истинската преграда.
+ */
+const FILTER_MAX_SOURCES = 20;
 
 /* ── Извличане ───────────────────────────────────────────────────────────── */
 
 export async function retrieve(
   ctx: RagContext,
-  notebookId: string,
   query: string,
   sources: Source[],
 ): Promise<Retrieved[]> {
@@ -43,10 +48,11 @@ export async function retrieve(
   // Двете търсения не си зависят, а векторното чака мрежа за вграждането —
   // затова вървят заедно.
   const match = ftsQuery(query);
+  const sourceIds = sources.map((s) => s.id);
   const [vectorIds, keywordIds] = await Promise.all([
-    searchByMeaning(ctx, notebookId, query, sources),
+    searchByMeaning(ctx, query, sourceIds),
     match
-      ? searchChunksByKeyword(ctx.db, notebookId, sources.map((s) => s.id), match, OVERFETCH)
+      ? searchChunksByKeyword(ctx.db, sourceIds, match, OVERFETCH)
       : Promise.resolve<string[]>([]),
   ]);
 
@@ -75,9 +81,18 @@ export async function retrieve(
   for (const f of fused) {
     const row = byId.get(f.id);
     if (!row) continue;
-    // Последната преграда преди контекста на модела. Пази и след стесняването в
-    // двете търсения, защото то е оптимизация — това е преградата.
-    if (row.notebook_id !== notebookId) continue;
+    /**
+     * Последната преграда преди контекста на модела.
+     *
+     * Проверката е по ИЗТОЧНИК, не по тетрадка, и това не е разхлабване: един
+     * източник е в точно една тетрадка, тоест разрешеният източник вече значи
+     * разрешена тетрадка. Обратното не важи, откакто има общи библиотеки —
+     * пасаж от библиотеката принадлежи на тетрадката на организацията, не на
+     * тази, която пита, така че проверка по тетрадка би отхвърлила точно
+     * законните споделени пасажи.
+     *
+     * Кои източници са разрешени се решава на едно място: `listAllowedSources`.
+     */
     const source = bySource.get(row.source_id);
     if (!source) continue;
     kept.push({
@@ -97,23 +112,25 @@ export async function retrieve(
 /** Търсене по смисъл във Vectorize — връща идентификатори, подредени по близост. */
 async function searchByMeaning(
   ctx: RagContext,
-  notebookId: string,
   query: string,
-  sources: Source[],
+  sourceIds: string[],
 ): Promise<string[]> {
   const [vector] = await ctx.ai.embed.embed([query], 'RETRIEVAL_QUERY');
   if (!vector) return [];
 
-  const filter: Record<string, unknown> = { notebookId: { $eq: notebookId } };
-  // Стесняваме още в индекса, когато част от източниците са изключени.
-  if (sources.length <= 20) {
-    filter.sourceId = { $in: sources.map((s) => s.id) };
-  }
+  /**
+   * Стеснява се по източник, защото само това важи и за общите библиотеки.
+   * Списъкът може да е дълъг, а `$in` има таван, затова при много източници
+   * търсим широко и отсяваме в кода — преградата е там така или иначе, а по-скъпо
+   * е само по трафик.
+   */
+  const filter =
+    sourceIds.length <= FILTER_MAX_SOURCES ? { sourceId: { $in: sourceIds } } : undefined;
 
   try {
     const res = await ctx.vectorize.query(vector, {
-      topK: OVERFETCH,
-      filter: filter as VectorizeVectorMetadataFilter,
+      topK: filter ? OVERFETCH : OVERFETCH * 2,
+      filter: filter as VectorizeVectorMetadataFilter | undefined,
       returnValues: false,
       returnMetadata: 'none',
     });
@@ -272,7 +289,7 @@ export async function* answerStream(
     return;
   }
 
-  const passages = await retrieve(ctx, input.notebookId, input.question, input.sources);
+  const passages = await retrieve(ctx, input.question, input.sources);
   yield { type: 'passages', count: passages.length };
 
   if (passages.length === 0) {

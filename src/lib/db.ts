@@ -48,7 +48,7 @@ export async function listNotebooks(db: D1Database, userId: string): Promise<Not
   const { results } = await db
     .prepare(
       `SELECT n.*, (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) AS source_count
-       FROM notebooks n WHERE n.user_id = ? ORDER BY n.updated_at DESC`,
+       FROM notebooks n WHERE n.user_id = ? AND n.kind = 'personal' ORDER BY n.updated_at DESC`,
     )
     .bind(userId)
     .all<NotebookRow>();
@@ -63,7 +63,7 @@ export async function getNotebook(
   const row = await db
     .prepare(
       `SELECT n.*, (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) AS source_count
-       FROM notebooks n WHERE n.id = ? AND n.user_id = ?`,
+       FROM notebooks n WHERE n.id = ? AND n.user_id = ? AND n.kind = 'personal'`,
     )
     .bind(id, userId)
     .first<NotebookRow>();
@@ -205,6 +205,125 @@ export async function listSources(db: D1Database, notebookId: string): Promise<S
     .bind(notebookId)
     .all<SourceRow>();
   return results.map(toSource);
+}
+
+/**
+ * Източниците, по които тетрадката има право да отговаря: своите плюс включените
+ * от библиотека на организация.
+ *
+ * ЕДИНСТВЕНОТО място, което решава това. Извличането вече не стеснява по
+ * тетрадка — един пасаж от библиотеката принадлежи на тетрадката на
+ * организацията, не на тази, която пита — тоест преградата е тук и само тук.
+ * Затова заявката за библиотечните източници минава през членството: включена
+ * връзка не стига, ако човекът вече не е член.
+ *
+ * `ordinal` на библиотечните продължава след своите, за да не се дублират
+ * номерата в цитатите („3 · име, стр. 12“).
+ */
+export async function listAllowedSources(
+  db: D1Database,
+  userId: string,
+  notebookId: string,
+): Promise<Source[]> {
+  const own = await listSources(db, notebookId);
+
+  const { results } = await db
+    .prepare(
+      `SELECT s.* FROM notebook_library_sources l
+         JOIN sources s   ON s.id = l.source_id
+         JOIN notebooks n ON n.id = s.notebook_id
+         JOIN org_members m ON m.org_id = n.org_id
+       WHERE l.notebook_id = ?
+         AND n.kind = 'library'
+         AND m.user_id = ?
+       ORDER BY s.ordinal`,
+    )
+    .bind(notebookId, userId)
+    .all<SourceRow>();
+
+  const shared = results.map(toSource);
+  if (shared.length === 0) return own;
+
+  const offset = own.reduce((max, s) => Math.max(max, s.ordinal), 0);
+  return [...own, ...shared.map((s, i) => ({ ...s, ordinal: offset + i + 1 }))];
+}
+
+/* ── Организации ─────────────────────────────────────────────────────────── */
+
+export type OrgRole = 'owner' | 'admin' | 'member';
+
+export interface OrgMembership {
+  orgId: string;
+  name: string;
+  role: OrgRole;
+  libraryId: string | null;
+}
+
+/** Организациите на човека, с ролята му и тетрадката-библиотека на всяка. */
+export async function listMemberships(
+  db: D1Database,
+  userId: string,
+): Promise<OrgMembership[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT o.id AS org_id, o.name, m.role,
+              (SELECT n.id FROM notebooks n
+                WHERE n.org_id = o.id AND n.kind = 'library' LIMIT 1) AS library_id
+       FROM org_members m JOIN organizations o ON o.id = m.org_id
+       WHERE m.user_id = ? ORDER BY o.name`,
+    )
+    .bind(userId)
+    .all<{ org_id: string; name: string; role: string; library_id: string | null }>();
+
+  return results.map((r) => ({
+    orgId: r.org_id,
+    name: r.name,
+    role: r.role as OrgRole,
+    libraryId: r.library_id,
+  }));
+}
+
+/**
+ * Ролята на човека в организацията, притежаваща дадена библиотека — или `null`,
+ * ако не е член. Ползва се, преди да се пипне съдържанието на библиотеката.
+ */
+export async function roleInLibrary(
+  db: D1Database,
+  userId: string,
+  libraryId: string,
+): Promise<OrgRole | null> {
+  const row = await db
+    .prepare(
+      `SELECT m.role FROM notebooks n
+         JOIN org_members m ON m.org_id = n.org_id
+       WHERE n.id = ? AND n.kind = 'library' AND m.user_id = ?`,
+    )
+    .bind(libraryId, userId)
+    .first<{ role: string }>();
+  return row ? (row.role as OrgRole) : null;
+}
+
+/** Включва или изключва източник от библиотека в лична тетрадка. */
+export async function setLibrarySource(
+  db: D1Database,
+  notebookId: string,
+  sourceId: string,
+  on: boolean,
+): Promise<void> {
+  if (on) {
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO notebook_library_sources (notebook_id, source_id, created_at)
+         VALUES (?, ?, ?)`,
+      )
+      .bind(notebookId, sourceId, now())
+      .run();
+    return;
+  }
+  await db
+    .prepare('DELETE FROM notebook_library_sources WHERE notebook_id = ? AND source_id = ?')
+    .bind(notebookId, sourceId)
+    .run();
 }
 
 export async function getSource(
@@ -381,8 +500,9 @@ export async function getChunksByIds(db: D1Database, ids: string[]): Promise<Chu
 /**
  * Търсене по думи през FTS5 — връща само идентификатори, подредени по BM25.
  *
- * Стеснява се до тетрадката и до избраните източници още тук, защото пасаж от
- * чужда тетрадка не бива да заема място в класирането, дори после да отпадне.
+ * Стеснява се до разрешените източници още тук, за да не заемат място в
+ * класирането пасажи, които после ще отпаднат. По източник, а не по тетрадка:
+ * само това важи и за общите библиотеки.
  *
  * Грешка не се пуска нагоре: индексът е допълнение към векторното търсене и ако
  * той не отговори (непусната миграция например), отговорът трябва да излезе с
@@ -390,7 +510,6 @@ export async function getChunksByIds(db: D1Database, ids: string[]): Promise<Chu
  */
 export async function searchChunksByKeyword(
   db: D1Database,
-  notebookId: string,
   sourceIds: string[],
   match: string,
   limit: number,
@@ -402,12 +521,11 @@ export async function searchChunksByKeyword(
       .prepare(
         `SELECT chunk_id FROM chunks_fts
          WHERE chunks_fts MATCH ?
-           AND notebook_id = ?
            AND source_id IN (${marks})
          ORDER BY bm25(chunks_fts)
          LIMIT ?`,
       )
-      .bind(match, notebookId, ...sourceIds, limit)
+      .bind(match, ...sourceIds, limit)
       .all<{ chunk_id: string }>();
     return results.map((r) => r.chunk_id);
   } catch (err) {

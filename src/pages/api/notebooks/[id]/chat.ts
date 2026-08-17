@@ -48,7 +48,7 @@ export const POST: APIRoute = handler(async (ctx) => {
 
   const [history, sources, rag] = await Promise.all([
     listMessages(env.DB, id),
-    selectedSources(id),
+    selectedSources(ctx, id),
     ragContext(ctx, notebook),
   ]);
 

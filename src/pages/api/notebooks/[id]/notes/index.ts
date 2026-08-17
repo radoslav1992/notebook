@@ -36,7 +36,7 @@ export const POST: APIRoute = handler(async (ctx) => {
     if (!(body.task in STUDIO_TASKS)) {
       throw new HttpError(400, `Непознат материал: ${body.task}`);
     }
-    const sources = await selectedSources(id);
+    const sources = await selectedSources(ctx, id);
     if (sources.length === 0) {
       throw new HttpError(400, 'Избери поне един обработен източник.');
     }
