@@ -87,7 +87,9 @@ export async function getUsage(db: D1Database, userId: string): Promise<Usage> {
       .bind(userId, period)
       .first<{ questions: number; audio: number }>(),
     db
-      .prepare('SELECT COUNT(*) AS c FROM notebooks WHERE user_id = ?')
+      // Библиотеката на организация не се брои в квотата на човека: тя е обща и
+      // не е негова, а иначе учителят я плаща от своя таван.
+      .prepare("SELECT COUNT(*) AS c FROM notebooks WHERE user_id = ? AND kind = 'personal'")
       .bind(userId)
       .first<{ c: number }>(),
   ]);

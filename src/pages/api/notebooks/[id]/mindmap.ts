@@ -16,7 +16,7 @@ export const POST: APIRoute = handler(async (ctx) => {
   const id = ctx.params.id!;
   const notebook = await requireNotebook(ctx, id);
 
-  const sources = await selectedSources(id);
+  const sources = await selectedSources(ctx, id);
   if (sources.length === 0) {
     throw new HttpError(400, 'Избери поне един обработен източник.');
   }

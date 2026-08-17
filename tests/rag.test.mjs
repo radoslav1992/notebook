@@ -85,12 +85,14 @@ const t = (name) => { pass++; console.log('  ok  ' + name); };
 
 /* ── retrieve ─────────────────────────────────────────────────────────────── */
 
-const got = await retrieve(ctx, 'nb1', 'Какви са целите за 2030?', sources);
+const got = await retrieve(ctx, 'Какви са целите за 2030?', sources);
 
 assert.equal(lastQuery.dims, 1536, 'query vector must match the Vectorize index width');
-assert.deepEqual(lastQuery.opts.filter.notebookId, { $eq: 'nb1' });
+// Стеснява се по източник, не по тетрадка: пасаж от обща библиотека е в
+// тетрадката на организацията, тоест филтър по тетрадка би отрязал точно него.
+assert.equal(lastQuery.opts.filter.notebookId, undefined, 'notebook filter must be gone');
 assert.deepEqual(lastQuery.opts.filter.sourceId, { $in: ['s1', 's2'] });
-t('embeds the query at 1536 dims and filters by notebook + selected sources');
+t('embeds the query at 1536 dims and narrows the index by allowed source')
 
 assert.deepEqual(got.map((p) => p.text), [
   'Лекцията говори за 2035 г.',
@@ -113,23 +115,23 @@ t('context block numbers passages the way the prompt asks the model to cite');
 // Точно случаят, заради който изобщо има второ търсене: пасаж, който Vectorize
 // нарежда последен, но буквалното съвпадение сочи пръв.
 keywordHits = ['c2'];
-const hybrid = await retrieve(ctx, 'nb1', 'справедлив преход', sources);
+const hybrid = await retrieve(ctx, 'справедлив преход', sources);
 assert.equal(hybrid[0].text, 'Справедлив преход като социална мярка.');
 t('a passage the keyword leg ranks first outranks the vector order');
 
 // Чуждата тетрадка и изключеният източник не бива да влизат и по този път.
 keywordHits = ['cX', 'c4', 'c1'];
-const guarded = await retrieve(ctx, 'nb1', 'каквото и да е', sources);
+const guarded = await retrieve(ctx, 'каквото и да е', sources);
 assert.deepEqual(
   guarded.filter((p) => p.text.includes('чужда') || p.text.includes('изключен')),
   [],
 );
-t('keyword hits are filtered by notebook and selected sources too');
+t('keyword hits are filtered by allowed source too');
 
 // Непусната миграция не бива да поваля въпроса — само отнема буквалното
 // съвпадение. Иначе една забравена стъпка при deploy спира всички отговори.
 keywordHits = null;
-const degraded = await retrieve(ctx, 'nb1', 'Какви са целите за 2030?', sources);
+const degraded = await retrieve(ctx, 'Какви са целите за 2030?', sources);
 assert.deepEqual(degraded.map((p) => p.text), got.map((p) => p.text));
 t('an unavailable FTS index degrades to vector-only instead of failing');
 

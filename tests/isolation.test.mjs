@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 
 const { buildAi } = await import('../src/lib/ai/index.ts');
 const { retrieve, readAll } = await import('../src/lib/rag.ts');
+const { listAllowedSources } = await import('../src/lib/db.ts');
 
 const HOST = 'http://127.0.0.1:8788';
 
@@ -114,38 +115,38 @@ console.log('изолация между тетрадки');
 const sources = [src('s1', 1), src('s2', 2)];
 
 keywordHits = [];
-let got = await retrieve(ctx, 'nb1', 'въпрос', sources);
+let got = await retrieve(ctx, 'въпрос', sources);
 assertNoLeak(got, ['s1', 's2'], 'само вектори');
 assert.equal(got.length, 2, 'нашите два пасажа трябва да минат');
 t('vector store returning everything cannot leak past the post-filter');
 
 // Сега търсенето по думи връща само забраненото.
 keywordHits = LEAKY;
-got = await retrieve(ctx, 'nb1', 'въпрос', sources);
+got = await retrieve(ctx, 'въпрос', sources);
 assertNoLeak(got, ['s1', 's2'], 'думи връщат забранено');
 t('keyword leg returning only foreign chunks contributes nothing');
 
 // И двете връщат само забранено → празен отговор, но без гърмеж.
 keywordHits = LEAKY;
-got = await retrieve(ctx, 'nb1', 'въпрос', [src('s1', 1)]);
+got = await retrieve(ctx, 'въпрос', [src('s1', 1)]);
 assertNoLeak(got, ['s1'], 'единствен избран източник');
 t('narrowing the selection narrows the result, not just the query');
 
 /* ── Пътят с над 20 източника ─────────────────────────────────────────────── */
 
-// Тук филтърът в индекса ИЗПУСКА sourceId (виж `sources.length <= 20` в
-// rag.ts) и цялата тежест пада на проверката в кода. Това е най-слабото място и
-// точно то ще се пипа при общите библиотеки.
+// Тук филтърът в индекса пада НАПЪЛНО (виж FILTER_MAX_SOURCES в rag.ts) и
+// цялата тежест минава на проверката в кода. Това е най-слабото място, а с
+// общите библиотеки дълъг списък източници става обичайно, не изключение.
 const many = [src('s1', 1), src('s2', 2), ...Array.from({ length: 23 }, (_, i) => src(`filler${i}`, i + 3))];
 keywordHits = LEAKY;
-got = await retrieve(ctx, 'nb1', 'въпрос', many);
+got = await retrieve(ctx, 'въпрос', many);
 assertNoLeak(got, many.map((s) => s.id), 'над 20 източника');
 hostileVectorize.calls = [];
-await retrieve(ctx, 'nb1', 'въпрос', many);
+await retrieve(ctx, 'въпрос', many);
 assert.equal(
-  hostileVectorize.calls[0].filter.sourceId,
+  hostileVectorize.calls[0].filter,
   undefined,
-  'при >20 източника филтърът наистина изпуска sourceId — ако това се промени, тестът трябва да се пренапише',
+  'при >20 източника наистина се търси без филтър — ако това се промени, тестът трябва да се пренапише',
 );
 t('over 20 sources the index filter drops sourceId, and code still holds the line');
 
@@ -161,8 +162,46 @@ t('readAll filters by allowed source even when the query hands it foreign rows')
 /* ── Празен избор ─────────────────────────────────────────────────────────── */
 
 keywordHits = LEAKY;
-assert.deepEqual(await retrieve(ctx, 'nb1', 'въпрос', []), []);
+assert.deepEqual(await retrieve(ctx, 'въпрос', []), []);
 assert.deepEqual(await readAll(ctx, []), []);
 t('no selected sources means no passages, from either path');
+
+/* ── Обща библиотека ──────────────────────────────────────────────────────── */
+
+// Библиотечен източник влиза със СВОЯ ordinal от чужда тетрадка, тоест може да
+// съвпадне с номер на свой източник. Съвпаднат ли, два различни източника носят
+// един и същ номер в цитатите и чипът „2 · …“ сочи ту едното, ту другото.
+const libraryDb = {
+  prepare(sql) {
+    const state = { sql, binds: [] };
+    const api = {
+      bind: (...b) => { state.binds = b; return api; },
+      all: async () => {
+        if (/FROM sources WHERE notebook_id/.test(state.sql)) {
+          return { results: [
+            { id: 'own1', notebook_id: 'nb1', ordinal: 1, kind: 'PDF', name: 'Мой', sub: '', origin_url: null, r2_key: null, byte_size: 0, page_count: 0, char_count: 0, selected: 1, status: 'ready', error: null, doc_name: null, created_at: 0 },
+            { id: 'own2', notebook_id: 'nb1', ordinal: 2, kind: 'PDF', name: 'Мой 2', sub: '', origin_url: null, r2_key: null, byte_size: 0, page_count: 0, char_count: 0, selected: 1, status: 'ready', error: null, doc_name: null, created_at: 0 },
+          ] };
+        }
+        if (/notebook_library_sources/.test(state.sql)) {
+          // Идва с ordinal 1 и 2 — същите като своите.
+          return { results: [
+            { id: 'lib1', notebook_id: 'libNb', ordinal: 1, kind: 'PDF', name: 'Учебник', sub: '', origin_url: null, r2_key: null, byte_size: 0, page_count: 0, char_count: 0, selected: 1, status: 'ready', error: null, doc_name: null, created_at: 0 },
+            { id: 'lib2', notebook_id: 'libNb', ordinal: 2, kind: 'PDF', name: 'Сборник', sub: '', origin_url: null, r2_key: null, byte_size: 0, page_count: 0, char_count: 0, selected: 1, status: 'ready', error: null, doc_name: null, created_at: 0 },
+          ] };
+        }
+        throw new Error('unexpected sql: ' + state.sql);
+      },
+      first: async () => null,
+      run: async () => ({}),
+    };
+    return api;
+  },
+};
+
+const merged = await listAllowedSources(libraryDb, 'student', 'nb1');
+assert.deepEqual(merged.map((s) => s.id), ['own1', 'own2', 'lib1', 'lib2']);
+assert.deepEqual(merged.map((s) => s.ordinal), [1, 2, 3, 4], 'номерата не бива да се повтарят');
+t('library sources are renumbered after the notebook own ones');
 
 console.log('\n' + pass + ' checks passed');
