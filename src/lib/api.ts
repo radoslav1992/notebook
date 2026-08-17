@@ -9,7 +9,8 @@ import {
   resolveChatModel,
   type Ai,
 } from './ai';
-import { HttpError, getNotebook, getSettings, listAllowedSources } from './db';
+import { HttpError, getLibraryNotebook, getNotebook, getSettings, listAllowedSources } from './db';
+import { requireLibraryRole } from './orgs';
 import { mailer } from './email';
 import { getEntitlement } from './limits';
 import type { RagContext } from './rag';
@@ -139,11 +140,30 @@ export async function dropVectors(ids: string[]): Promise<void> {
   }
 }
 
-/** Тетрадка на текущия потребител — или 404. */
-export async function requireNotebook(ctx: APIContext, id: string): Promise<Notebook> {
+/**
+ * Тетрадка на текущия потребител — или 404.
+ *
+ * `library` отваря вратата и за тетрадка-библиотека на организация, срещу
+ * проверка за роля. Подава се ИЗРИЧНО и само там, където има смисъл: качването
+ * на източници. Останалите маршрути (чат, аудио, студио) остават само за лични
+ * тетрадки — иначе библиотеката би харчела квота и би пълнила студио задачи,
+ * а тя е склад, не работно място.
+ */
+export async function requireNotebook(
+  ctx: APIContext,
+  id: string,
+  opts: { library?: 'read' | 'write' } = {},
+): Promise<Notebook> {
   const nb = await getNotebook(env.DB, ctx.locals.user.id, id);
-  if (!nb) throw new HttpError(404, 'Тетрадката не е намерена.');
-  return nb;
+  if (nb) return nb;
+
+  if (opts.library) {
+    await requireLibraryRole(env.DB, ctx.locals.user.id, id, { write: opts.library === 'write' });
+    const library = await getLibraryNotebook(env.DB, id);
+    if (library) return library;
+  }
+
+  throw new HttpError(404, 'Тетрадката не е намерена.');
 }
 
 export async function ragContext(

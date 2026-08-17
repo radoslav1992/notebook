@@ -24,6 +24,13 @@ t('the app and everything it writes through needs an account', () => {
     // Прави заявка към Google при всяко отваряне — отворен, той е безплатен
     // начин някой да хаби квотата на инсталацията.
     '/api/models',
+    // Организациите и библиотеките: всяко от тези чете или пипа общи данни.
+    '/api/orgs',
+    '/api/orgs/org_1/invites',
+    '/api/orgs/join',
+    '/api/notebooks/nb_123/library',
+    // Приемането на покана иска профил — поканата се връзва за имейла на влезлия.
+    '/join',
   ]) {
     assert.equal(classifyRoute(p), 'guarded', p);
   }

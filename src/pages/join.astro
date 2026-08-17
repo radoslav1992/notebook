@@ -1,0 +1,64 @@
+---
+import Base from '~/layouts/Base.astro';
+
+// Токенът се приема с POST от браузъра, не тук: GET заявка към връзка от писмо
+// се повтаря от предварителни зареждания и от антивирусни програми, а поканата е
+// еднократна — изразходвана от такова зареждане, човекът вижда „вече използвана“.
+const token = Astro.url.searchParams.get('token') ?? '';
+---
+
+<Base title="Покана — Записки" description="Приеми покана за организация в Записки.">
+  <main class="join">
+    <h1>Покана за организация</h1>
+    {token ? (
+      <p id="msg">Приемам поканата…</p>
+    ) : (
+      <p id="msg">Връзката е непълна — липсва токен. Поискай нова покана.</p>
+    )}
+    <p><a href="/app">← Към тетрадките</a></p>
+  </main>
+</Base>
+
+<script is:inline define:vars={{ token }}>
+  if (token) {
+    fetch('/api/orgs/join', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        const msg = document.getElementById('msg');
+        if (r.ok) {
+          msg.textContent = `Вече си член на „${data.org.name}“. Отвори тетрадка и включи общите източници.`;
+        } else {
+          msg.textContent = data.error || 'Поканата не беше приета.';
+        }
+      })
+      .catch(() => {
+        document.getElementById('msg').textContent = 'Мрежата не отговори. Опитай пак.';
+      });
+  }
+</script>
+
+<style>
+  .join {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 80px 24px;
+    font-family: var(--font-sans);
+    color: var(--ink);
+  }
+  h1 {
+    font-family: var(--font-serif);
+    font-size: 28px;
+    margin: 0 0 14px;
+  }
+  p {
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  a {
+    color: var(--brand);
+  }
+</style>

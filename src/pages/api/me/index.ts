@@ -5,6 +5,7 @@ import { getEntitlement, getUsage } from '~/lib/limits';
 import { PLANS } from '~/lib/plans';
 import { clearCookieHeader, getPasswordHash, verifyPassword } from '~/lib/auth';
 import { Stripe } from '~/lib/stripe';
+import { releaseOrgsOfUser } from '~/lib/orgs';
 import { mailer } from '~/lib/email';
 
 export const prerender = false;
@@ -92,6 +93,11 @@ export const DELETE: APIRoute = handler(async (ctx) => {
       ),
     );
   }
+
+  // Преди триенето: библиотеката носи `user_id` на създателя си, тоест иначе си
+  // отива с него и организацията остава без общите източници, макар останалите
+  // членове да не са направили нищо.
+  await releaseOrgsOfUser(env.DB, user.id);
 
   const footprint = await collectUserFootprint(env.DB, user.id);
   await deleteUserRows(env.DB, user.id);

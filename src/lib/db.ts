@@ -70,6 +70,25 @@ export async function getNotebook(
   return row ? toNotebook(row) : null;
 }
 
+/**
+ * Библиотеката по id, без проверка кой пита — проверката за роля е отделна
+ * (`requireLibraryRole`). `getNotebook` нарочно не я връща: тя не се управлява
+ * като лична тетрадка.
+ */
+export async function getLibraryNotebook(
+  db: D1Database,
+  id: string,
+): Promise<Notebook | null> {
+  const row = await db
+    .prepare(
+      `SELECT n.*, (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) AS source_count
+       FROM notebooks n WHERE n.id = ? AND n.kind = 'library'`,
+    )
+    .bind(id)
+    .first<NotebookRow>();
+  return row ? toNotebook(row) : null;
+}
+
 export async function createNotebook(
   db: D1Database,
   userId: string,
