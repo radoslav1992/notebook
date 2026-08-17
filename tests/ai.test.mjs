@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-const { providerFor, usesGeminiShape, dimensionsFor, isMultilingualEmbed } = await import(
+const { providerFor, usesGeminiShape, bodyShapeFor, dimensionsFor, isMultilingualEmbed } = await import(
   '../src/lib/ai/select.ts'
 );
 const { modelChoices, resolveChatModel, labelFor, FALLBACK_CHAT_MODEL } = await import(
@@ -60,6 +60,20 @@ t('only the google/* partner models take the Gemini body shape', () => {
   assert.equal(usesGeminiShape('google/gemini-3.6-flash'), true);
   assert.equal(usesGeminiShape('@cf/baai/bge-m3'), false);
   assert.equal(usesGeminiShape('gemini-2.5-flash'), false);
+});
+
+t('three body shapes, not two — openai/* is the Responses API', () => {
+  // Подадени грешни полета, моделът не гърми: тихо игнорира тавана и
+  // температурата. Затова разликата се пази в тест.
+  assert.equal(bodyShapeFor('google/gemini-3.6-flash'), 'gemini');
+  assert.equal(bodyShapeFor('openai/gpt-5.6-luna'), 'responses');
+  assert.equal(bodyShapeFor('@cf/meta/llama-3.3-70b-instruct-fp8-fast'), 'messages');
+  assert.equal(bodyShapeFor('@cf/baai/bge-m3'), 'messages');
+});
+
+t('the label keeps acronyms upper-case', () => {
+  // „Gpt 5.6 Luna“ изглежда като печатна грешка в падащото меню.
+  assert.equal(labelFor('openai/gpt-5.6-luna'), 'GPT 5.6 Luna — през Cloudflare');
 });
 
 t('vector width follows the embedding model, and can be forced', () => {
@@ -454,9 +468,69 @@ t('labels say the model and where it runs', () => {
   assert.equal(labelFor('gemini-2.5-flash'), 'Gemini 2.5 Flash — през Google');
   assert.equal(
     labelFor('@cf/meta/llama-3.3-70b-instruct-fp8-fast'),
-    'Llama 3.3 70b Instruct Fp8 Fast — през Cloudflare',
+    'Llama 3.3 70b Instruct FP8 Fast — през Cloudflare',
   );
   assert.match(labelFor('@cf/baai/bge-m3'), /през Cloudflare$/);
+});
+
+/* ── Responses API (openai/*) ─────────────────────────────────────────────── */
+
+await at('an openai/* model gets input + instructions + max_output_tokens', async () => {
+  const ai = stubAi({
+    output: [
+      { type: 'reasoning', content: [] },
+      { type: 'message', content: [{ type: 'output_text', text: 'Отговор.' }] },
+    ],
+  });
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  const text = await cf.generateText({
+    prompt: 'Въпрос?',
+    systemInstruction: 'Бъди кратък.',
+    config: { maxOutputTokens: 512, temperature: 0.35 },
+  });
+
+  assert.equal(text, 'Отговор.', 'текстът се чете от втория елемент, не от първия');
+
+  const { input } = ai.calls[0];
+  assert.deepEqual(input.input, [{ role: 'user', content: 'Въпрос?' }]);
+  assert.equal(input.instructions, 'Бъди кратък.');
+  assert.equal(input.max_output_tokens, 512, 'не max_tokens');
+  assert.equal(input.messages, undefined, 'формата за @cf/* не бива да изтича тук');
+  assert.equal(input.contents, undefined, 'нито тази за google/*');
+  // Токените за мислене се таксуват като изход, тоест неограничено мислене е
+  // неограничена сметка за нещо, което потребителят не чете.
+  assert.equal(input.reasoning?.effort, 'low');
+});
+
+await at('reasoning items before the message do not swallow the answer', async () => {
+  // Точният случай, който би дал празен отговор, ако се вземе „първият елемент“.
+  const ai = stubAi({
+    output: [
+      { type: 'reasoning' },
+      { type: 'message', content: [{ type: 'output_text', text: 'Част 1. ' }] },
+      { type: 'message', content: [{ type: 'output_text', text: 'Част 2.' }] },
+    ],
+  });
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  assert.equal(await cf.generateText({ prompt: 'х' }), 'Част 1. Част 2.');
+});
+
+await at('the Gemini and @cf shapes still get their own bodies', async () => {
+  const g = stubAi({ candidates: [{ content: { parts: [{ text: 'G' }] } }] });
+  await new CloudflareAi({ ai: g, model: 'google/gemini-3.6-flash' }).generateText({
+    prompt: 'х',
+    config: { maxOutputTokens: 99 },
+  });
+  assert.equal(g.calls[0].input.generationConfig.maxOutputTokens, 99);
+  assert.equal(g.calls[0].input.input, undefined);
+
+  const c = stubAi({ response: 'C' });
+  await new CloudflareAi({ ai: c, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }).generateText({
+    prompt: 'х',
+    config: { maxOutputTokens: 99 },
+  });
+  assert.equal(c.calls[0].input.max_tokens, 99, '@cf/* ползва max_tokens');
+  assert.equal(c.calls[0].input.max_output_tokens, undefined);
 });
 
 console.log('\n' + pass + ' checks passed');
