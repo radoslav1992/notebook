@@ -1,23 +1,83 @@
+import { useEffect, useState } from 'preact/hooks';
+import { apiGet, apiSend } from '~/lib/client';
 import type { Source } from '~/lib/types';
+
+interface LibrarySource {
+  id: string;
+  name: string;
+  kind: string;
+  sub: string;
+  on: boolean;
+}
+
+interface Library {
+  orgId: string;
+  orgName: string;
+  role: string;
+  sources: LibrarySource[];
+}
 
 interface Props {
   sources: Source[];
+  notebookId: string;
   onToggle: (source: Source) => void;
   onToggleAll: (selected: boolean) => void;
   onRemove: (source: Source) => void;
   onAdd: () => void;
+  onLibraryChange: () => void;
   active: boolean;
 }
 
 export default function SourcesPanel({
   sources,
+  notebookId,
   onToggle,
   onToggleAll,
   onRemove,
   onAdd,
+  onLibraryChange,
   active,
 }: Props) {
   const allSelected = sources.length > 0 && sources.every((s) => s.selected);
+  const [libraries, setLibraries] = useState<Library[]>([]);
+
+  // Общите източници се теглят отделно: тетрадка без организация не бива да
+  // плаща за заявка, която винаги връща празно, затова секцията просто не се
+  // показва, ако няма нищо.
+  useEffect(() => {
+    apiGet<{ libraries: Library[] }>(`/api/notebooks/${notebookId}/library`)
+      .then((r) => setLibraries(r.libraries.filter((l) => l.sources.length > 0)))
+      .catch(() => setLibraries([]));
+  }, [notebookId]);
+
+  async function toggleShared(lib: Library, source: LibrarySource) {
+    const next = !source.on;
+    setLibraries((list) =>
+      list.map((l) =>
+        l.orgId === lib.orgId
+          ? { ...l, sources: l.sources.map((s) => (s.id === source.id ? { ...s, on: next } : s)) }
+          : l,
+      ),
+    );
+    try {
+      await apiSend(`/api/notebooks/${notebookId}/library`, 'PATCH', {
+        sourceId: source.id,
+        on: next,
+      });
+      // Отговорите се смятат по разрешените източници, тоест списъкът в
+      // работната площ трябва да се опресни, иначе цитатите сочат номера, които
+      // интерфейсът още не познава.
+      onLibraryChange();
+    } catch {
+      setLibraries((list) =>
+        list.map((l) =>
+          l.orgId === lib.orgId
+            ? { ...l, sources: l.sources.map((s) => (s.id === source.id ? { ...s, on: !next } : s)) }
+            : l,
+        ),
+      );
+    }
+  }
 
   return (
     <section class={`panel sources ${active ? 'active' : ''}`} aria-label="Източници">
@@ -44,6 +104,29 @@ export default function SourcesPanel({
             до 50 източника.
           </p>
         )}
+
+        {libraries.map((lib) => (
+          <div class="src-shared" key={lib.orgId}>
+            <div class="src-shared-head">{lib.orgName} · общи</div>
+            {lib.sources.map((s) => (
+              <button
+                key={s.id}
+                class="src-item"
+                onClick={() => toggleShared(lib, s)}
+                title={s.name}
+              >
+                <span class="src-kind">{s.kind}</span>
+                <span class="src-body">
+                  <span class="src-name">{s.name}</span>
+                  <span class="src-sub">{s.sub}</span>
+                </span>
+                <span class={`check ${s.on ? 'on' : ''}`} aria-hidden="true">
+                  {s.on ? '✓' : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        ))}
 
         {sources.map((s) => (
           <button

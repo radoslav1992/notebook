@@ -1,0 +1,51 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import Chrome from '../../../components/Chrome.astro';
+import LibraryView from '../../../components/LibraryView';
+import { getLibraryNotebook, listSources } from '../../../lib/db';
+import { requireLibraryRole } from '../../../lib/orgs';
+import '../../../styles/app.css';
+
+export const prerender = false;
+
+const id = Astro.params.id!;
+const user = Astro.locals.user;
+
+// Ролята се проверява ТУК, преди да се покаже каквото и да е: библиотеката се
+// чете само от членове, а се пълни само от собственик или администратор.
+let role: string;
+try {
+  role = await requireLibraryRole(env.DB, user.id, id);
+} catch {
+  return Astro.redirect('/app');
+}
+
+const notebook = await getLibraryNotebook(env.DB, id);
+if (!notebook) return Astro.redirect('/app');
+
+const sources = await listSources(env.DB, id);
+const canWrite = role === 'owner' || role === 'admin';
+---
+
+<Base title={`${notebook.title} — Записки`} description="Обща библиотека на организация.">
+  <Chrome user={user} />
+  <div class="settings-wrap">
+    <h1>{notebook.title}</h1>
+    <p class="library-lead">
+      Каченото тук се вижда от всички членове и се включва от панела с източниците в тяхните
+      тетрадки. Един запис — без копия и без повторно вграждане.
+    </p>
+    <LibraryView libraryId={id} sources={sources} canWrite={canWrite} client:load />
+  </div>
+</Base>
+
+<style>
+  .library-lead {
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.6;
+    margin: -6px 0 22px;
+    max-width: 620px;
+  }
+</style>
