@@ -28,6 +28,25 @@ export function usesGeminiShape(model: string): boolean {
 }
 
 /**
+ * Формата на тялото за даден модел през `env.AI.run`. Три са, не две:
+ *
+ *  • `gemini`    — `google/*`: `contents` / `generationConfig`
+ *  • `responses` — `openai/*`: Responses API, `input` / `instructions` /
+ *                  `max_output_tokens`, а отговорът идва в `output`
+ *  • `messages`  — `@cf/*` и всичко останало: `messages` / `max_tokens`
+ *
+ * Разликата не е козметична: подадени грешни полета, моделът не гърми, а тихо
+ * игнорира тавана и температурата.
+ */
+export type BodyShape = 'gemini' | 'responses' | 'messages';
+
+export function bodyShapeFor(model: string): BodyShape {
+  if (model.startsWith('google/')) return 'gemini';
+  if (model.startsWith('openai/')) return 'responses';
+  return 'messages';
+}
+
+/**
  * Ширината на вектора за даден модел за вграждане.
  *
  * Числото трябва да съвпада с Vectorize индекса, а ширината на съществуващ

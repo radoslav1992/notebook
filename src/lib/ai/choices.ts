@@ -69,7 +69,14 @@ export function labelFor(model: string): string {
   return `${words.join(' ')} — ${via}`;
 }
 
-const ACRONYMS: Record<string, string> = { tts: 'TTS', stt: 'STT', ai: 'AI', llm: 'LLM' };
+const ACRONYMS: Record<string, string> = {
+  tts: 'TTS',
+  stt: 'STT',
+  ai: 'AI',
+  llm: 'LLM',
+  gpt: 'GPT',
+  fp8: 'FP8',
+};
 
 function word(w: string): string {
   const acronym = ACRONYMS[w.toLowerCase()];

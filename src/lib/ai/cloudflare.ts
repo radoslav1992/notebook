@@ -15,7 +15,7 @@
  */
 
 import { AiError } from './error';
-import { usesGeminiShape } from './select';
+import { bodyShapeFor, usesGeminiShape } from './select';
 import type {
   ChatModel,
   Content,
@@ -221,13 +221,51 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
  * `@cf/*`. Системната инструкция е отделно поле при Google и роля `system` при
  * Cloudflare.
  */
+/**
+ * Колко да мисли моделът от рода „reasoning“.
+ *
+ * Токените за мислене се таксуват като изход и не се виждат в отговора, тоест
+ * неограничено мислене е неограничена сметка за нещо, което потребителят не чете.
+ * Задачата тук е преразказ на подадени пасажи с цитати — тя не иска дълго
+ * обмисляне, иска вярност към текста.
+ */
+const REASONING_EFFORT = 'low';
+
 function textBody(
   model: string,
   contents: Content[],
   systemInstruction?: string,
   config?: GenerateConfig,
 ): Record<string, unknown> {
-  if (usesGeminiShape(model)) {
+  const shape = bodyShapeFor(model);
+
+  if (shape === 'responses') {
+    return {
+      input: contents.map((c) => ({
+        role: c.role === 'model' ? 'assistant' : 'user',
+        content: c.parts.map((p) => p.text ?? '').join(''),
+      })),
+      ...(systemInstruction ? { instructions: systemInstruction } : {}),
+      ...(config?.maxOutputTokens === undefined
+        ? {}
+        : { max_output_tokens: config.maxOutputTokens }),
+      ...(config?.temperature === undefined ? {} : { temperature: config.temperature }),
+      reasoning: { effort: REASONING_EFFORT },
+      ...(config?.responseSchema
+        ? {
+            text: {
+              format: {
+                type: 'json_schema',
+                name: 'answer',
+                schema: config.responseSchema,
+              },
+            },
+          }
+        : {}),
+    };
+  }
+
+  if (shape === 'gemini') {
     return {
       contents,
       ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
@@ -293,9 +331,57 @@ function textFrom(res: unknown): string {
   if (typeof res === 'string') return res;
   const parts = partsFrom(res);
   if (parts.length) return parts.map((p) => p.text ?? '').join('');
+  const fromResponses = responsesText(res);
+  if (fromResponses !== null) return fromResponses;
+
   const own = res as { response?: unknown; result?: { response?: unknown } };
   const text = own?.response ?? own?.result?.response;
   return typeof text === 'string' ? text : '';
+}
+
+/**
+ * Текстът от отговор на Responses API (`openai/*`).
+ *
+ * `output` е списък и първите му елементи може да са от вида `reasoning` — те са
+ * без текст за четене. Затова се търсят само `output_text` парчетата, вместо да
+ * се взима „първият елемент“: иначе отговорът излиза празен точно при моделите,
+ * които мислят, а това после се чете като „моделът не върна нищо“.
+ *
+ * Връща `null`, ако формата изобщо не е тази, за да продължи търсенето по
+ * останалите пътища.
+ */
+function responsesText(res: unknown): string | null {
+  const r = res as {
+    output_text?: unknown;
+    output?: { type?: string; content?: { type?: string; text?: unknown }[] }[];
+    delta?: unknown;
+  };
+
+  // Стрийминг: всяко събитие носи парченце в `delta`.
+  if (typeof r?.delta === 'string') return r.delta;
+  if (typeof r?.output_text === 'string') return r.output_text;
+
+  if (Array.isArray(r?.output)) {
+    const text = r.output
+      .flatMap((item) => item?.content ?? [])
+      .filter((part) => part?.type === 'output_text' || typeof part?.text === 'string')
+      .map((part) => (typeof part.text === 'string' ? part.text : ''))
+      .join('');
+
+    // Формата е позната, но текст няма. Или моделът е мислил и е свършил тавана,
+    // или полетата не са тези, които чакаме. Вторият случай е тих и много скъп за
+    // намиране, затова се вижда в лога с ВИДОВЕТЕ на елементите — без текста им,
+    // защото това е съдържание на потребителя.
+    if (!text) {
+      console.warn('[zapiski:ai] Responses API без текст', {
+        items: r.output.map((item) => item?.type ?? '?'),
+        parts: r.output.flatMap((item) => (item?.content ?? []).map((c) => c?.type ?? '?')),
+      });
+    }
+    return text;
+  }
+
+  return null;
 }
 
 /** SSE от Workers AI: `data: {...}` на всеки ред, в двете възможни форми. */
