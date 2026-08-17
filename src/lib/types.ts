@@ -1,6 +1,16 @@
 export type SourceKind = 'PDF' | 'DOC' | 'WEB' | 'YT' | 'TXT' | 'AUD';
 export type SourceStatus = 'pending' | 'indexing' | 'ready' | 'error';
-export type NoteKind = 'note' | 'study_guide' | 'timeline' | 'briefing' | 'exam';
+export type NoteKind =
+  | 'note'
+  | 'study_guide'
+  | 'timeline'
+  | 'briefing'
+  | 'exam'
+  | 'summary'
+  | 'questions'
+  | 'obligations'
+  | 'review'
+  | 'actions';
 export type JobKind = 'audio' | 'mindmap' | 'note';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error';
 
@@ -117,4 +127,6 @@ export interface Settings {
   responseLanguage: string;
   offlineMode: boolean;
   chatModel: string;
+  /** За какво се ползва приложението; празно значи „още не е питан“. */
+  useCase: string;
 }

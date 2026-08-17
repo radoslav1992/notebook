@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { formatDuration } from '~/lib/audio/wav';
 import { renderMarkdown } from '~/lib/markdown';
-import { STUDIO_TASKS, type StudioTaskKey } from '~/lib/prompts';
+import { STUDIO_TASKS, tilesFor, type StudioTaskKey, type UseCase } from '~/lib/prompts';
 import type { Note, StudioJob } from '~/lib/types';
 
 interface Props {
@@ -14,10 +14,10 @@ interface Props {
   onAddNote: () => void;
   onDeleteNote: (note: Note) => void;
   onOpenMindmap: () => void;
+  /** За какво се ползва приложението — решава кои материали се предлагат. */
+  useCase: string;
   active: boolean;
 }
-
-const TILES: StudioTaskKey[] = ['study_guide', 'timeline', 'briefing', 'exam'];
 
 export default function StudioPanel({
   notes,
@@ -29,6 +29,7 @@ export default function StudioPanel({
   onAddNote,
   onDeleteNote,
   onOpenMindmap,
+  useCase,
   active,
 }: Props) {
   return (
@@ -53,7 +54,7 @@ export default function StudioPanel({
         </button>
 
         <div class="studio-grid">
-          {TILES.map((task) => (
+          {tilesFor(useCase as UseCase).map((task) => (
             <button
               key={task}
               class="studio-tile"

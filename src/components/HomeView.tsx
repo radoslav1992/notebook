@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import { ApiError, apiSend } from '~/lib/client';
 import { DocIcon, SearchIcon } from './icons';
+import UseCasePrompt from './UseCasePrompt';
 import type { Notebook } from '~/lib/types';
 
 type Filter = 'all' | 'recent' | 'shared';
@@ -8,6 +9,8 @@ type Filter = 'all' | 'recent' | 'shared';
 interface Props {
   notebooks: Notebook[];
   displayName: string;
+  /** Празно значи „още не е питан“ — тогава се показва въпросът отгоре. */
+  useCase: string;
   /** Таван на плана; `null` значи неограничено. */
   maxNotebooks: number | null;
   /** Колко тетрадки са дошли от профил на гост при влизане. */
@@ -17,6 +20,7 @@ interface Props {
 export default function HomeView({
   notebooks: initial,
   displayName,
+  useCase: initialUseCase,
   maxNotebooks,
   claimed = 0,
 }: Props) {
@@ -26,6 +30,7 @@ export default function HomeView({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [quotaHit, setQuotaHit] = useState(false);
+  const [askUseCase, setAskUseCase] = useState(initialUseCase === '');
 
   const visible = useMemo(() => {
     if (filter === 'shared') return [];
@@ -76,6 +81,8 @@ export default function HomeView({
 
   return (
     <div class="home">
+      {askUseCase && <UseCasePrompt onDone={() => setAskUseCase(false)} />}
+
       <div class="home-head">
         <div>
           <h1 class="home-hello">Здравей, {displayName}</h1>

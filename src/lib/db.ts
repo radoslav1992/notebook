@@ -908,14 +908,15 @@ export async function saveMindmap(
 
 export async function getSettings(db: D1Database, userId: string): Promise<Settings> {
   const row = await db
-    .prepare('SELECT response_language, offline_mode, chat_model FROM settings WHERE user_id = ?')
+    .prepare('SELECT response_language, offline_mode, chat_model, use_case FROM settings WHERE user_id = ?')
     .bind(userId)
-    .first<{ response_language: string; offline_mode: number; chat_model: string }>();
+    .first<{ response_language: string; offline_mode: number; chat_model: string; use_case: string }>();
   return {
     responseLanguage: row?.response_language ?? 'bg',
     offlineMode: (row?.offline_mode ?? 1) === 1,
     // Празно значи „каквото е зададено за инсталацията“ — виж ai/choices.ts.
     chatModel: row?.chat_model ?? '',
+    useCase: row?.use_case ?? '',
   };
 }
 
@@ -926,12 +927,13 @@ export async function saveSettings(
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO settings (user_id, response_language, offline_mode, chat_model, updated_at)
-       VALUES (?, COALESCE(?, 'bg'), COALESCE(?, 1), COALESCE(?, ''), ?)
+      `INSERT INTO settings (user_id, response_language, offline_mode, chat_model, use_case, updated_at)
+       VALUES (?, COALESCE(?, 'bg'), COALESCE(?, 1), COALESCE(?, ''), COALESCE(?, ''), ?)
        ON CONFLICT(user_id) DO UPDATE SET
          response_language = COALESCE(excluded.response_language, settings.response_language),
          offline_mode      = COALESCE(excluded.offline_mode, settings.offline_mode),
          chat_model        = COALESCE(excluded.chat_model, settings.chat_model),
+         use_case          = COALESCE(excluded.use_case, settings.use_case),
          updated_at        = excluded.updated_at`,
     )
     .bind(
@@ -939,6 +941,7 @@ export async function saveSettings(
       patch.responseLanguage ?? null,
       patch.offlineMode === undefined ? null : patch.offlineMode ? 1 : 0,
       patch.chatModel ?? null,
+      patch.useCase ?? null,
       now(),
     )
     .run();

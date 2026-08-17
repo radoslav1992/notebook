@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { ApiError, apiSend, getLocalKey, maskKey, setLocalKey } from '~/lib/client';
+import { USE_CASES } from '~/lib/prompts';
 import type { ModelChoice } from '~/lib/ai/choices';
 import type { Settings, User } from '~/lib/types';
 
@@ -148,6 +149,28 @@ export default function SettingsView({
               <option key={m.value} value={m.value} disabled={m.pro && !proModel}>
                 {m.label}
                 {m.pro && !proModel ? ' (Плюс)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div class="setting">
+          <div class="grow">
+            <div class="setting-name">За какво го ползваш</div>
+            <div class="setting-hint">
+              Сменя кои материали предлага студиото: резюме и въпроси за проверка, учебно
+              ръководство и изпит, задължения и рискове, обзор, или решения и стъпки.
+            </div>
+          </div>
+          <select
+            class="select"
+            value={settings.useCase}
+            onChange={(e) => void patch({ useCase: (e.target as HTMLSelectElement).value })}
+          >
+            <option value="">Общи материали</option>
+            {USE_CASES.map((u) => (
+              <option key={u.value} value={u.value}>
+                {u.label}
               </option>
             ))}
           </select>
