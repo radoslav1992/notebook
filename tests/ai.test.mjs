@@ -533,4 +533,25 @@ await at('the Gemini and @cf shapes still get their own bodies', async () => {
   assert.equal(c.calls[0].input.max_output_tokens, undefined);
 });
 
+await at('a 7003 routing error names the model instead of guessing', async () => {
+  // Точното съобщение от Cloudflare при сгрешено име на модел.
+  const ai = { run: async () => { throw new Error('7003: User Input Error'); } };
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  const err = await cf.generateText({ prompt: 'х' }).then(() => null, (e) => e);
+
+  assert.ok(err, 'трябва да хвърли');
+  assert.equal(err.status, 404, '7003 е „няма такъв адрес“, не 502');
+  assert.ok(err.message.includes('openai/gpt-5.6-luna'), 'трябва да каже КОЙ модел: ' + err.message);
+  assert.ok(/Models|\/api\/models/.test(err.message), 'и къде да се провери: ' + err.message);
+});
+
+await at('any other Workers AI failure still names the model and the shape', async () => {
+  // Иначе човекът гадае между три роли (чат, вграждания, реч) и три форми.
+  const ai = { run: async () => { throw new Error('something odd happened'); } };
+  const cf = new CloudflareAi({ ai, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' });
+  const err = await cf.generateText({ prompt: 'х' }).then(() => null, (e) => e);
+  assert.ok(err.message.includes('@cf/meta/llama-3.3-70b-instruct-fp8-fast'), err.message);
+  assert.ok(err.message.includes('messages'), 'формата също: ' + err.message);
+});
+
 console.log('\n' + pass + ' checks passed');

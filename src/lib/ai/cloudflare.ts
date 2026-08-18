@@ -423,6 +423,23 @@ function asAiError(err: unknown, model: string): AiError {
   const status = code ? Number(code) : 502;
   const lower = message.toLowerCase();
 
+  /**
+   * 7003 е грешка за МАРШРУТИЗИРАНЕ при Cloudflare: „не мога да стигна до този
+   * обект“. При `env.AI.run` това на практика значи, че адресът на модела не се
+   * разпознава — сгрешено име, или име, до което този акаунт няма достъп.
+   *
+   * Стои преди проверката за „no such model“, защото текстът ѝ е друг („User
+   * Input Error“) и иначе случаят падаше в общото съобщение, без да каже КОЙ
+   * модел е отказан.
+   */
+  if (message.includes('7003')) {
+    return new AiError(
+      404,
+      `Cloudflare не намери модел „${model}“. Кодът 7003 значи, че адресът на модела не се разпознава — най-често сгрешено име или модел, до който акаунтът няма достъп. Сравни го със списъка в Workers AI → Models, а какво е зададено в момента виж на /api/models.`,
+      message,
+    );
+  }
+
   if (lower.includes('no such model') || lower.includes('model not found')) {
     return new AiError(
       404,
@@ -441,7 +458,14 @@ function asAiError(err: unknown, model: string): AiError {
   if (lower.includes('capacity') || lower.includes('rate limit') || status === 429) {
     return new AiError(429, 'Workers AI е претоварен в момента. Опитай пак след малко.', message);
   }
-  return new AiError(status, `Workers AI отказа заявката: ${message}`.slice(0, 300), message);
+  // Името на модела и формата на тялото влизат в текста: грешка за модел, която
+  // не казва кой е моделът, оставя човека да гадае между три роли (чат,
+  // вграждания, реч) и три различни форми на заявката.
+  return new AiError(
+    status,
+    `Workers AI отказа заявката за „${model}“ (форма: ${bodyShapeFor(model)}): ${message}`.slice(0, 300),
+    message,
+  );
 }
 
 /* ── Дребни помощни ──────────────────────────────────────────────────────── */
