@@ -37,6 +37,18 @@ export interface AiBinding {
  */
 const STREAMS = new Map<string, boolean>();
 
+/**
+ * Приема ли даден `openai/*` модел допълненията към тялото — `reasoning` и
+ * `temperature`. Проверява се веднъж на модел, при първата заявка.
+ *
+ * Нужно е, защото документираният пример носи само `input`, `instructions` и
+ * `max_output_tokens`, а моделите от рода „reasoning“ често отказват
+ * `temperature`. Отказът идва като „User Input Error“ — тоест като грешка в
+ * съдържанието, макар да е в настройка. Затова при отказ се пробва още веднъж
+ * без тях, вместо въпросът да се проваля.
+ */
+const RESPONSES_EXTRAS = new Map<string, boolean>();
+
 export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
   readonly model: string;
   readonly dimensions: number;
@@ -64,6 +76,42 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
     }
   }
 
+  /**
+   * Заявка за текст, с едно повторение без допълненията при отказ.
+   *
+   * Само за `openai/*` и само веднъж на модел: `reasoning` и `temperature` са
+   * настройки, не съдържание, тоест по-добре въпросът да мине без тях, отколкото
+   * да се провали заради тях. Отказ от 500 нагоре не се повтаря — той не е за
+   * тялото.
+   */
+  async #runText(
+    model: string,
+    contents: Content[],
+    systemInstruction?: string,
+    config?: GenerateConfig,
+    overrides: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    const shape = bodyShapeFor(model);
+    const canRetry = shape === 'responses' && RESPONSES_EXTRAS.get(model) !== false;
+    const build = (extras: boolean) => ({
+      ...textBody(model, contents, systemInstruction, config, extras),
+      ...overrides,
+    });
+
+    try {
+      return await this.#run(model, build(canRetry));
+    } catch (err) {
+      if (!canRetry) throw err;
+      if (!(err instanceof AiError) || err.status >= 500) throw err;
+      console.warn('[zapiski:ai] Responses API отказа допълненията, пробвам без тях', {
+        model,
+        detail: err.message.slice(0, 160),
+      });
+      RESPONSES_EXTRAS.set(model, false);
+      return this.#run(model, build(false));
+    }
+  }
+
   /* ── текст ─────────────────────────────────────────────────────────────── */
 
   async generateText(input: {
@@ -73,9 +121,11 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
     config?: GenerateConfig;
   }): Promise<string> {
     const model = input.model ?? this.model;
-    const res = await this.#run(
+    const res = await this.#runText(
       model,
-      textBody(model, [{ role: 'user', parts: [{ text: input.prompt }] }], input.systemInstruction, input.config),
+      [{ role: 'user', parts: [{ text: input.prompt }] }],
+      input.systemInstruction,
+      input.config,
     );
     return textFrom(res).trim();
   }
@@ -92,9 +142,11 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
       responseMimeType: 'application/json',
       responseSchema: input.schema,
     };
-    const res = await this.#run(
+    const res = await this.#runText(
       model,
-      textBody(model, [{ role: 'user', parts: [{ text: input.prompt }] }], input.systemInstruction, config),
+      [{ role: 'user', parts: [{ text: input.prompt }] }],
+      input.systemInstruction,
+      config,
     );
     const raw = textFrom(res).trim();
     try {
@@ -120,11 +172,12 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
     config?: GenerateConfig;
   }): AsyncGenerator<{ text: string }> {
     const model = input.model ?? this.model;
-    const body = textBody(model, input.contents, input.systemInstruction, input.config);
 
     if (STREAMS.get(model) !== false) {
       try {
-        const res = await this.#run(model, { ...body, stream: true });
+        const res = await this.#runText(model, input.contents, input.systemInstruction, input.config, {
+          stream: true,
+        });
         if (res instanceof ReadableStream) {
           STREAMS.set(model, true);
           yield* readSse(res);
@@ -141,7 +194,7 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
       }
     }
 
-    const res = await this.#run(model, body);
+    const res = await this.#runText(model, input.contents, input.systemInstruction, input.config);
     yield { text: textFrom(res).trim() };
   }
 
@@ -236,21 +289,26 @@ function textBody(
   contents: Content[],
   systemInstruction?: string,
   config?: GenerateConfig,
+  extras = true,
 ): Record<string, unknown> {
   const shape = bodyShapeFor(model);
 
   if (shape === 'responses') {
     return {
-      input: contents.map((c) => ({
-        role: c.role === 'model' ? 'assistant' : 'user',
-        content: c.parts.map((p) => p.text ?? '').join(''),
-      })),
+      // Низ, не масив от съобщения: така е в документирания пример, а масив дава
+      // „User Input Error“. При разговор репликите се сливат с етикети — губи се
+      // структурата, но печели това, че заявката минава.
+      input: flatten(contents),
       ...(systemInstruction ? { instructions: systemInstruction } : {}),
       ...(config?.maxOutputTokens === undefined
         ? {}
         : { max_output_tokens: config.maxOutputTokens }),
-      ...(config?.temperature === undefined ? {} : { temperature: config.temperature }),
-      reasoning: { effort: REASONING_EFFORT },
+      ...(extras
+        ? {
+            reasoning: { effort: REASONING_EFFORT },
+            ...(config?.temperature === undefined ? {} : { temperature: config.temperature }),
+          }
+        : {}),
       ...(config?.responseSchema
         ? {
             text: {
@@ -382,6 +440,21 @@ function responsesText(res: unknown): string | null {
   }
 
   return null;
+}
+
+/**
+ * Разговорът като един низ — за формата, която иска `input` низ.
+ *
+ * Един ред без етикет, когато има само един въпрос: етикетът „Потребител:“ пред
+ * самотен въпрос е шум, който моделът понякога приема за част от задачата.
+ */
+function flatten(contents: Content[]): string {
+  const turns = contents.map((c) => ({
+    role: c.role === 'model' ? 'Асистент' : 'Потребител',
+    text: c.parts.map((p) => p.text ?? '').join(''),
+  }));
+  if (turns.length === 1) return turns[0]!.text;
+  return turns.map((t) => `${t.role}: ${t.text}`).join('\n\n');
 }
 
 /** SSE от Workers AI: `data: {...}` на всеки ред, в двете възможни форми. */

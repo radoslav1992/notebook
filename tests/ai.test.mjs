@@ -475,6 +475,59 @@ t('labels say the model and where it runs', () => {
 
 /* ── Responses API (openai/*) ─────────────────────────────────────────────── */
 
+await at('input is a plain string, not an array of messages', async () => {
+  // Масив от {role, content} дава „User Input Error“ — документираният пример е низ.
+  const ai = stubAi({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'x' }] }] });
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  await cf.generateText({ prompt: 'Един въпрос?' });
+  assert.equal(ai.calls[0].input.input, 'Един въпрос?', 'самотен въпрос минава без етикет');
+});
+
+await at('a conversation is flattened with labels', async () => {
+  const ai = stubAi({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'x' }] }] });
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  const out = [];
+  for await (const e of cf.stream({
+    contents: [
+      { role: 'user', parts: [{ text: 'Първи' }] },
+      { role: 'model', parts: [{ text: 'Отговор' }] },
+      { role: 'user', parts: [{ text: 'Втори' }] },
+    ],
+  })) out.push(e);
+  const sent = ai.calls[0].input.input;
+  assert.equal(typeof sent, 'string');
+  assert.ok(sent.includes('Потребител: Първи'), sent);
+  assert.ok(sent.includes('Асистент: Отговор'), sent);
+});
+
+await at('rejected extras are dropped and the question still goes through', async () => {
+  // Точният отказ, който видяхме: настройка, отказана като грешка в съдържанието.
+  let call = 0;
+  const seen = [];
+  const ai = {
+    run: async (_m, input) => {
+      seen.push(input);
+      if (++call === 1) throw new Error('7003: User Input Error');
+      return { output: [{ type: 'message', content: [{ type: 'output_text', text: 'Готово.' }] }] };
+    },
+  };
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna-probe' });
+  const text = await cf.generateText({ prompt: 'х', config: { temperature: 0.3 } });
+
+  assert.equal(text, 'Готово.', 'въпросът трябва да мине от втория опит');
+  assert.equal(seen.length, 2);
+  assert.ok(seen[0].reasoning, 'първият опит носи допълненията');
+  assert.equal(seen[1].reasoning, undefined, 'вторият е без тях');
+  assert.equal(seen[1].temperature, undefined);
+  assert.equal(seen[1].input, 'х', 'а съдържанието остава същото');
+
+  // Запомнено е: следващата заявка вече не хаби опит.
+  seen.length = 0;
+  await cf.generateText({ prompt: 'пак' });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].reasoning, undefined);
+});
+
 await at('an openai/* model gets input + instructions + max_output_tokens', async () => {
   const ai = stubAi({
     output: [
@@ -492,7 +545,7 @@ await at('an openai/* model gets input + instructions + max_output_tokens', asyn
   assert.equal(text, 'Отговор.', 'текстът се чете от втория елемент, не от първия');
 
   const { input } = ai.calls[0];
-  assert.deepEqual(input.input, [{ role: 'user', content: 'Въпрос?' }]);
+  assert.equal(input.input, 'Въпрос?');
   assert.equal(input.instructions, 'Бъди кратък.');
   assert.equal(input.max_output_tokens, 512, 'не max_tokens');
   assert.equal(input.messages, undefined, 'формата за @cf/* не бива да изтича тук');
