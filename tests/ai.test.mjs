@@ -607,4 +607,32 @@ await at('any other Workers AI failure still names the model and the shape', asy
   assert.ok(err.message.includes('messages'), 'формата също: ' + err.message);
 });
 
+await at('a hanging model call fails instead of blocking forever', async () => {
+  // Точният случай: аудио прегледът заби на 55%, защото едно повикване не върна
+  // нищо и нямаше кой да се откаже от чакането.
+  const { withTimeout } = await import('../src/lib/ai/error.ts');
+  const never = new Promise(() => {});
+  const err = await withTimeout(never, 'TTS (тест)', 20).then(() => null, (e) => e);
+
+  assert.ok(err, 'трябва да се откаже');
+  assert.equal(err.status, 504);
+  assert.ok(err.message.includes('TTS (тест)'), 'трябва да каже КОЕ е чакало: ' + err.message);
+});
+
+await at('a late rejection after the timeout does not surface as unhandled', async () => {
+  const { withTimeout } = await import('../src/lib/ai/error.ts');
+  let boom;
+  const late = new Promise((_, reject) => { boom = reject; });
+  await withTimeout(late, 'тест', 10).catch(() => {});
+  boom(new Error('дошло след като вече не чакаме'));
+  // Ако тихият catch липсваше, това би било необработено отхвърляне.
+  await new Promise((r) => setTimeout(r, 20));
+  pass += 0;
+});
+
+await at('a call that answers in time is untouched', async () => {
+  const { withTimeout } = await import('../src/lib/ai/error.ts');
+  assert.equal(await withTimeout(Promise.resolve('готово'), 'тест', 5000), 'готово');
+});
+
 console.log('\n' + pass + ' checks passed');

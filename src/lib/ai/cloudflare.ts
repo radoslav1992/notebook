@@ -14,7 +14,7 @@
  * аудио файл и File Search. Тези пътища искат `ai.google` и казват го ясно.
  */
 
-import { AiError } from './error';
+import { AiError, withTimeout } from './error';
 import { bodyShapeFor, usesGeminiShape } from './select';
 import type {
   ChatModel,
@@ -70,7 +70,7 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
 
   async #run(model: string, input: Record<string, unknown>): Promise<unknown> {
     try {
-      return await this.#ai.run(model, input);
+      return await withTimeout(this.#ai.run(model, input), `Workers AI (${model})`);
     } catch (err) {
       throw asAiError(err, model);
     }
