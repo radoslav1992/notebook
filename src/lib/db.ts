@@ -89,6 +89,21 @@ export async function getLibraryNotebook(
   return row ? toNotebook(row) : null;
 }
 
+/** Наборът по id. Проверката кой пита е отделна — виж `requireAdmin`. */
+export async function getDatasetNotebook(
+  db: D1Database,
+  id: string,
+): Promise<Notebook | null> {
+  const row = await db
+    .prepare(
+      `SELECT n.*, (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) AS source_count
+       FROM notebooks n WHERE n.id = ? AND n.kind = 'dataset'`,
+    )
+    .bind(id)
+    .first<NotebookRow>();
+  return row ? toNotebook(row) : null;
+}
+
 export async function createNotebook(
   db: D1Database,
   userId: string,
@@ -545,6 +560,48 @@ export async function searchChunksByKeyword(
          LIMIT ?`,
       )
       .bind(match, ...sourceIds, limit)
+      .all<{ chunk_id: string }>();
+    return results.map((r) => r.chunk_id);
+  } catch (err) {
+    console.error('[zapiski:fts]', err);
+    return [];
+  }
+}
+
+/**
+ * Източници по идентификатор.
+ *
+ * Нужно е за наборите: те са стотици документа, тоест не може да се зареди целият
+ * списък, за да се разпознае един цитат. Зареждат се само тези, чиито пасажи
+ * реално са попаднали в отговора.
+ */
+export async function getSourcesByIds(db: D1Database, ids: string[]): Promise<Source[]> {
+  if (ids.length === 0) return [];
+  const marks = ids.map(() => '?').join(', ');
+  const { results } = await db
+    .prepare(`SELECT * FROM sources WHERE id IN (${marks})`)
+    .bind(...ids)
+    .all<SourceRow>();
+  return results.map(toSource);
+}
+
+/** Търсене по думи в набор — стеснява се по тетрадка, защото наборът Е тетрадка. */
+export async function searchDatasetsByKeyword(
+  db: D1Database,
+  datasetIds: string[],
+  match: string,
+  limit: number,
+): Promise<string[]> {
+  if (datasetIds.length === 0) return [];
+  const marks = datasetIds.map(() => '?').join(', ');
+  try {
+    const { results } = await db
+      .prepare(
+        `SELECT chunk_id FROM chunks_fts
+         WHERE chunks_fts MATCH ? AND notebook_id IN (${marks})
+         ORDER BY bm25(chunks_fts) LIMIT ?`,
+      )
+      .bind(match, ...datasetIds, limit)
       .all<{ chunk_id: string }>();
     return results.map((r) => r.chunk_id);
   } catch (err) {

@@ -9,8 +9,16 @@ import {
   resolveChatModel,
   type Ai,
 } from './ai';
-import { HttpError, getLibraryNotebook, getNotebook, getSettings, listAllowedSources } from './db';
+import {
+  HttpError,
+  getDatasetNotebook,
+  getLibraryNotebook,
+  getNotebook,
+  getSettings,
+  listAllowedSources,
+} from './db';
 import { requireLibraryRole } from './orgs';
+import { requireAdmin } from './datasets';
 import { mailer } from './email';
 import { getEntitlement } from './limits';
 import type { RagContext } from './rag';
@@ -158,6 +166,14 @@ export async function requireNotebook(
   if (nb) return nb;
 
   if (opts.library) {
+    // Наборът също е тетрадка и качването в него минава през същия маршрут.
+    // Разликата е кой пуска: библиотеката — роля в организация, наборът — админ.
+    const dataset = await getDatasetNotebook(env.DB, id);
+    if (dataset) {
+      requireAdmin(env, ctx.locals.user.email);
+      return dataset;
+    }
+
     await requireLibraryRole(env.DB, ctx.locals.user.id, id, { write: opts.library === 'write' });
     const library = await getLibraryNotebook(env.DB, id);
     if (library) return library;

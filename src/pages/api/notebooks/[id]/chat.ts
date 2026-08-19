@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { allowedDatasetIds } from '~/lib/datasets';
 import {
   env,
   handler,
@@ -46,9 +47,10 @@ export const POST: APIRoute = handler(async (ctx) => {
   requireVerified(ctx);
   await assertCanAsk(env.DB, ctx.locals.user.id);
 
-  const [history, sources, rag] = await Promise.all([
+  const [history, sources, datasets, rag] = await Promise.all([
     listMessages(env.DB, id),
     selectedSources(ctx, id),
+    allowedDatasetIds(env.DB, ctx.locals.user.id, id),
     ragContext(ctx, notebook),
   ]);
 
@@ -69,6 +71,7 @@ export const POST: APIRoute = handler(async (ctx) => {
       try {
         for await (const part of answerStream(rag, {
           notebookId: id,
+          datasets,
           question,
           sources,
           history: history.map((m) => ({ role: m.role, text: m.text })),

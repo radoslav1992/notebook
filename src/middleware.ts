@@ -8,7 +8,7 @@ import type { User } from './lib/types';
  * Gemini квота, затова трябва да има кой да отговаря за тях. Без сесия
  * страниците пренасочват към входа, а API-тата отговарят с 401.
  */
-const REQUIRES_AUTH = /^\/(app(\/|$)|join(\/|$)|api\/(notebooks|settings|me|models|orgs)(\/|$))/;
+const REQUIRES_AUTH = /^\/(app(\/|$)|join(\/|$)|api\/(notebooks|settings|me|models|orgs|admin|datasets)(\/|$))/;
 
 /**
  * Пътища, които само гледат кой е влязъл: вход, регистрация, плащане.

@@ -1,5 +1,11 @@
 import { Gemini, groundingChunksOf, textOf } from './gemini';
-import { getChunksByIds, getChunksForSources, searchChunksByKeyword } from './db';
+import {
+  getChunksByIds,
+  getChunksForSources,
+  getSourcesByIds,
+  searchChunksByKeyword,
+  searchDatasetsByKeyword,
+} from './db';
 import { ftsQuery, rrf } from './search';
 import { requireGoogleFeature, type Ai } from './ai';
 import { isDimensionMismatch, vectorError } from './vector';
@@ -42,23 +48,39 @@ export async function retrieve(
   ctx: RagContext,
   query: string,
   sources: Source[],
+  datasets: string[] = [],
 ): Promise<Retrieved[]> {
-  if (sources.length === 0) return [];
+  if (sources.length === 0 && datasets.length === 0) return [];
 
-  // Двете търсения не си зависят, а векторното чака мрежа за вграждането —
-  // затова вървят заедно.
+  /**
+   * До четири класирания: смисъл и дума, поотделно за своите източници и за
+   * включените набори.
+   *
+   * Наборите се търсят отделно, а не с разширен списък източници, защото те са
+   * стотици документа — списък с толкова идентификатора не се побира в филтъра, а
+   * и не може да се зареди наведнъж. Понеже наборът Е тетрадка, стеснява се по
+   * `notebookId`, което вече е индексирано.
+   *
+   * Сливането е същото: RRF не се интересува колко списъка са, само от реда в тях.
+   */
   const match = ftsQuery(query);
   const sourceIds = sources.map((s) => s.id);
-  const [vectorIds, keywordIds] = await Promise.all([
-    searchByMeaning(ctx, query, sourceIds),
-    match
+  const [vectorIds, keywordIds, datasetVectorIds, datasetKeywordIds] = await Promise.all([
+    sourceIds.length ? searchByMeaning(ctx, query, sourceIds) : Promise.resolve<string[]>([]),
+    match && sourceIds.length
       ? searchChunksByKeyword(ctx.db, sourceIds, match, OVERFETCH)
+      : Promise.resolve<string[]>([]),
+    datasets.length ? searchDatasets(ctx, query, datasets) : Promise.resolve<string[]>([]),
+    match && datasets.length
+      ? searchDatasetsByKeyword(ctx.db, datasets, match, OVERFETCH)
       : Promise.resolve<string[]>([]),
   ]);
 
   // Само непразните класирания влизат в сливането: списък с нула пасажа не
   // значи „всичко е еднакво лошо“, а „това търсене няма мнение“.
-  const fused = rrf([vectorIds, keywordIds].filter((list) => list.length > 0));
+  const fused = rrf(
+    [vectorIds, keywordIds, datasetVectorIds, datasetKeywordIds].filter((list) => list.length > 0),
+  );
   if (fused.length === 0) return [];
 
   const rows = await getChunksByIds(
@@ -76,6 +98,25 @@ export async function retrieve(
    * трети вид достъп (обща библиотека например) и допише само единия.
    */
   const bySource = new Map(sources.map((s) => [s.id, s]));
+
+  /**
+   * Източниците от набор се зареждат допълнително и само тези, чиито пасажи реално
+   * са изплували — наборът е стотици документа и не се побира в паметта наготово.
+   *
+   * Номерата им продължават след своите, за да не сочи един и същ чип към две
+   * различни неща.
+   */
+  const allowedDatasets = new Set(datasets);
+  const fromDatasets = fused
+    .map((f) => byId.get(f.id))
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .filter((row) => !bySource.has(row.source_id) && allowedDatasets.has(row.notebook_id));
+
+  if (fromDatasets.length > 0) {
+    const extra = await getSourcesByIds(ctx.db, [...new Set(fromDatasets.map((r) => r.source_id))]);
+    let ordinal = sources.reduce((max, s) => Math.max(max, s.ordinal), 0);
+    for (const source of extra) bySource.set(source.id, { ...source, ordinal: ++ordinal });
+  }
 
   const kept: Retrieved[] = [];
   for (const f of fused) {
@@ -143,6 +184,41 @@ async function searchByMeaning(
     // отсяваме след това.
     const res = await ctx.vectorize.query(vector, { topK: OVERFETCH * 2, returnMetadata: 'none' });
     return res.matches.map((m) => m.id);
+  }
+}
+
+/**
+ * Търсене по смисъл в набори.
+ *
+ * Стеснява се по `notebookId`, защото наборът Е тетрадка — това поле вече е
+ * индексирано в метаданните и не иска нито ново поле, нито пресъздаване на
+ * индекса (метаданните не важат назад).
+ *
+ * Ако филтърът откаже, тук НЕ се пада на широко търсене, за разлика от своите
+ * източници: там широкото търсене е по-скъпо, но безопасно, защото преградата в
+ * кода го отсява. При наборите широкото търсене би върнало пасажи от набори, до
+ * които човекът няма право — те пак ще отпаднат, но по-добре да не се търсят.
+ */
+async function searchDatasets(
+  ctx: RagContext,
+  query: string,
+  datasetIds: string[],
+): Promise<string[]> {
+  const [vector] = await ctx.ai.embed.embed([query], 'RETRIEVAL_QUERY');
+  if (!vector) return [];
+
+  try {
+    const res = await ctx.vectorize.query(vector, {
+      topK: OVERFETCH,
+      filter: { notebookId: { $in: datasetIds } } as VectorizeVectorMetadataFilter,
+      returnValues: false,
+      returnMetadata: 'none',
+    });
+    return res.matches.map((m) => m.id);
+  } catch (err) {
+    if (isDimensionMismatch(err)) throw vectorError(err, ctx.ai.embed.dimensions);
+    console.error('[zapiski:datasets] търсенето в набор отказа', err);
+    return [];
   }
 }
 
@@ -263,6 +339,8 @@ export async function* answerStream(
     notebookId: string;
     question: string;
     sources: Source[];
+    /** Включените набори — минават през `allowedDatasetIds`, не идват от клиента. */
+    datasets?: string[];
     history: { role: 'user' | 'ai'; text: string }[];
     model?: string;
   },
@@ -289,7 +367,7 @@ export async function* answerStream(
     return;
   }
 
-  const passages = await retrieve(ctx, input.question, input.sources);
+  const passages = await retrieve(ctx, input.question, input.sources, input.datasets ?? []);
   yield { type: 'passages', count: passages.length };
 
   if (passages.length === 0) {
