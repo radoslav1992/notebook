@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env, handler, json, readJson } from '~/lib/api';
-import { grantDataset, publishDataset, requireAdmin, updateDatasetMeta } from '~/lib/datasets';
+import { grantDataset, publishDataset, requireAdmin, setDatasetPublic, updateDatasetMeta } from '~/lib/datasets';
 import { findUserByEmail } from '~/lib/auth';
 import { HttpError } from '~/lib/db';
 import { USE_CASES } from '~/lib/prompts';
@@ -14,6 +14,7 @@ export const PATCH: APIRoute = handler(async (ctx) => {
     blurb?: string;
     useCases?: string[];
     published?: boolean;
+    isPublic?: boolean;
     grantTo?: string;
   }>(ctx.request);
 
@@ -27,6 +28,10 @@ export const PATCH: APIRoute = handler(async (ctx) => {
 
   if (typeof body.published === 'boolean') {
     await publishDataset(env.DB, id, body.published);
+  }
+
+  if (typeof body.isPublic === 'boolean') {
+    await setDatasetPublic(env.DB, id, body.isPublic);
   }
 
   // Даването на достъп е тук, докато няма плащане. После същата функция ще се

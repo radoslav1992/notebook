@@ -9,7 +9,7 @@
 --   wrangler d1 migrations apply zapiski --remote
 -- без да ти трябва терминал.
 --
--- Съдържа: 0001_init.sql, 0002_auth_billing.sql, 0003_hybrid_search.sql, 0004_foreign_keys.sql, 0005_organizations.sql, 0006_org_invites.sql, 0007_use_case.sql, 0008_datasets.sql
+-- Съдържа: 0001_init.sql, 0002_auth_billing.sql, 0003_hybrid_search.sql, 0004_foreign_keys.sql, 0005_organizations.sql, 0006_org_invites.sql, 0007_use_case.sql, 0008_datasets.sql, 0009_public_datasets.sql
 -- ─────────────────────────────────────────────────────────────────────────
 
 -- Таблицата, с която wrangler помни какво вече е приложено. Пълни се накрая,
@@ -525,6 +525,22 @@ CREATE INDEX IF NOT EXISTS idx_notebook_datasets_ds ON notebook_datasets(dataset
 ALTER TABLE sources ADD COLUMN retired_at INTEGER;
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- 0009_public_datasets.sql
+-- ═══════════════════════════════════════════════════════════════════════
+
+/* ── Свободни набори ───────────────────────────────────────────────────────
+ * Дотук наборът стигаше до потребител само след изрично „Дай достъп“ по имейл.
+ * Библиотека, от която хората САМИ си добавят, иска и другия режим: свободен
+ * набор, видим за всеки влязъл без грант.
+ *
+ * Флаг върху набора, а не грант за всички: ред в dataset_grants на всеки
+ * потребител би значел писане при регистрация и изоставане за вече
+ * регистрираните. Флагът се проверява в същите заявки, където се проверява
+ * грантът — правото пак се решава на едно място.
+ */
+ALTER TABLE datasets_meta ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0;
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- Отбелязваме миграциите като приложени.
 -- ═══════════════════════════════════════════════════════════════════════
 
@@ -536,3 +552,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0005_organizations.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0006_org_invites.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0007_use_case.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0008_datasets.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0009_public_datasets.sql');
