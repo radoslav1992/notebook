@@ -1,0 +1,52 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../../layouts/Base.astro';
+import Chrome from '../../../../components/Chrome.astro';
+import LibraryView from '../../../../components/LibraryView';
+import { getDatasetNotebook, listSources } from '../../../../lib/db';
+import { requireAdmin } from '../../../../lib/datasets';
+import '../../../../styles/app.css';
+
+export const prerender = false;
+
+const id = Astro.params.id!;
+const user = Astro.locals.user;
+
+try {
+  requireAdmin(env, user.email);
+} catch {
+  return Astro.redirect('/app');
+}
+
+const notebook = await getDatasetNotebook(env.DB, id);
+if (!notebook) return Astro.redirect('/app/admin');
+
+const sources = await listSources(env.DB, id);
+---
+
+<Base title={`${notebook.title} — Записки`} description="Съдържание на общ набор.">
+  <Chrome user={user} />
+  <div class="settings-wrap">
+    <h1>{notebook.title}</h1>
+    <p class="admin-lead">
+      <a href="/app/admin">← Всички набори</a> · Обновяването е <strong>нов източник</strong>, а не
+      редакция на стария: така цитат от стар разговор още сочи текста, който човекът е чел.
+    </p>
+    <!-- Същият компонент като библиотеката на организация: наборът също е тетрадка,
+         тоест качването минава по същия маршрут и няма своя логика. -->
+    <LibraryView libraryId={id} sources={sources} canWrite={true} client:load />
+  </div>
+</Base>
+
+<style>
+  .admin-lead {
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.6;
+    margin: -6px 0 22px;
+    max-width: 620px;
+  }
+  .admin-lead a {
+    color: var(--brand);
+  }
+</style>

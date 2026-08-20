@@ -17,6 +17,15 @@ interface Library {
   sources: LibrarySource[];
 }
 
+interface DatasetRow {
+  id: string;
+  title: string;
+  emoji: string;
+  blurb: string;
+  sourceCount: number;
+  on: boolean;
+}
+
 interface Props {
   sources: Source[];
   notebookId: string;
@@ -40,6 +49,7 @@ export default function SourcesPanel({
 }: Props) {
   const allSelected = sources.length > 0 && sources.every((s) => s.selected);
   const [libraries, setLibraries] = useState<Library[]>([]);
+  const [datasets, setDatasets] = useState<DatasetRow[]>([]);
 
   // Общите източници се теглят отделно: тетрадка без организация не бива да
   // плаща за заявка, която винаги връща празно, затова секцията просто не се
@@ -49,6 +59,29 @@ export default function SourcesPanel({
       .then((r) => setLibraries(r.libraries.filter((l) => l.sources.length > 0)))
       .catch(() => setLibraries([]));
   }, [notebookId]);
+
+  // Наборите се теглят отделно: човек без достъп до нито един не бива да плаща за
+  // заявка, която винаги връща празно, затова секцията просто не се показва.
+  useEffect(() => {
+    apiGet<{ datasets: DatasetRow[] }>(`/api/datasets?notebook=${notebookId}`)
+      .then((r) => setDatasets(r.datasets))
+      .catch(() => setDatasets([]));
+  }, [notebookId]);
+
+  async function toggleDataset(ds: DatasetRow) {
+    const next = !ds.on;
+    setDatasets((list) => list.map((d) => (d.id === ds.id ? { ...d, on: next } : d)));
+    try {
+      await apiSend('/api/datasets', 'PATCH', {
+        notebookId,
+        datasetId: ds.id,
+        on: next,
+      });
+      onLibraryChange();
+    } catch {
+      setDatasets((list) => list.map((d) => (d.id === ds.id ? { ...d, on: !next } : d)));
+    }
+  }
 
   async function toggleShared(lib: Library, source: LibrarySource) {
     const next = !source.on;
@@ -103,6 +136,32 @@ export default function SourcesPanel({
             Тетрадката е празна. Добави PDF, Word, уеб страница, YouTube, аудио или собствен текст —
             до 50 източника.
           </p>
+        )}
+
+        {datasets.length > 0 && (
+          <div class="src-shared">
+            <div class="src-shared-head">Общи набори</div>
+            {datasets.map((ds) => (
+              <button
+                key={ds.id}
+                class="src-item"
+                onClick={() => void toggleDataset(ds)}
+                title={ds.blurb || ds.title}
+              >
+                <span class="src-kind">{ds.emoji}</span>
+                <span class="src-body">
+                  <span class="src-name">{ds.title}</span>
+                  <span class="src-sub">
+                    {ds.sourceCount} {ds.sourceCount === 1 ? 'документ' : 'документа'}
+                    {ds.blurb ? ` · ${ds.blurb}` : ''}
+                  </span>
+                </span>
+                <span class={`check ${ds.on ? 'on' : ''}`} aria-hidden="true">
+                  {ds.on ? '✓' : ''}
+                </span>
+              </button>
+            ))}
+          </div>
         )}
 
         {libraries.map((lib) => (

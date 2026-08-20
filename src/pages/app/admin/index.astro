@@ -1,0 +1,43 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import Chrome from '../../../components/Chrome.astro';
+import AdminDatasets from '../../../components/AdminDatasets';
+import { listAllDatasets, requireAdmin } from '../../../lib/datasets';
+import '../../../styles/app.css';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+
+// 404 през redirect, а не съобщение: че панелът съществува не е нужно да се знае.
+try {
+  requireAdmin(env, user.email);
+} catch {
+  return Astro.redirect('/app');
+}
+
+const datasets = await listAllDatasets(env.DB);
+---
+
+<Base title="Набори — Записки" description="Управление на общите набори.">
+  <Chrome user={user} />
+  <div class="settings-wrap">
+    <h1>Набори</h1>
+    <p class="admin-lead">
+      Наборът е готово съдържание, което много хора включват в своите тетрадки. Качва се веднъж и се
+      вгражда веднъж — един запис обслужва всички.
+    </p>
+    <AdminDatasets datasets={datasets} client:load />
+  </div>
+</Base>
+
+<style>
+  .admin-lead {
+    color: var(--muted);
+    font-size: 13.5px;
+    line-height: 1.6;
+    margin: -6px 0 22px;
+    max-width: 620px;
+  }
+</style>

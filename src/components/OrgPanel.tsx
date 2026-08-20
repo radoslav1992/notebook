@@ -22,7 +22,13 @@ const ROLE_LABEL: Record<string, string> = {
   member: 'член',
 };
 
-export default function OrgPanel({ emailEnabled }: { emailEnabled: boolean }) {
+export default function OrgPanel({
+  emailEnabled,
+  isAdmin = false,
+}: {
+  emailEnabled: boolean;
+  isAdmin?: boolean;
+}) {
   const [orgs, setOrgs] = useState<Org[] | null>(null);
   const [members, setMembers] = useState<Record<string, Member[]>>({});
   const [name, setName] = useState('');
@@ -164,6 +170,20 @@ export default function OrgPanel({ emailEnabled }: { emailEnabled: boolean }) {
           )}
         </div>
       ))}
+
+      {isAdmin && (
+        <div class="setting">
+          <div class="grow">
+            <div class="setting-name">Общи набори</div>
+            <div class="setting-hint">
+              Управление на готовото съдържание, което всички включват в тетрадките си.
+            </div>
+          </div>
+          <a class="btn btn-quiet" href="/app/admin">
+            Отвори
+          </a>
+        </div>
+      )}
 
       <form class="setting" onSubmit={create}>
         <div class="grow">
