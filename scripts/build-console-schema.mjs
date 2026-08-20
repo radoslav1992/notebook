@@ -71,4 +71,18 @@ parts.push(
 );
 
 writeFileSync(out, parts.join('\n'));
+// Списъкът на очакваните миграции, като код: middleware-ът го сравнява със
+// записаните в d1_migrations и казва ЧЕТИМО кои липсват, вместо голо 500.
+// Генериран е, за да няма как да изостане от папката — пуска се при всеки build.
+const gen = [
+  '// ГЕНЕРИРАН ФАЙЛ — не го редактирай. Пуска се от scripts/build-console-schema.mjs',
+  '// при всеки build, за да съвпада винаги с папката migrations/.',
+  'export const EXPECTED_MIGRATIONS: string[] = [',
+  ...files.map((f) => `  '${f}',`),
+  '];',
+  '',
+].join('\n');
+writeFileSync(join(root, 'src', 'lib', 'migrations.gen.ts'), gen);
+
 console.log(`docs/console-schema.sql ← ${files.join(', ')}`);
+console.log(`src/lib/migrations.gen.ts ← ${files.length} migrations`);

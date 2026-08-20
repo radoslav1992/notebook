@@ -6,6 +6,7 @@ import { PLANS } from '~/lib/plans';
 import { clearCookieHeader, getPasswordHash, verifyPassword } from '~/lib/auth';
 import { Stripe } from '~/lib/stripe';
 import { releaseOrgsOfUser } from '~/lib/orgs';
+import { countOwnedDatasets } from '~/lib/datasets';
 import { mailer } from '~/lib/email';
 
 export const prerender = false;
@@ -91,6 +92,17 @@ export const DELETE: APIRoute = handler(async (ctx) => {
       new Stripe({ secretKey: env.STRIPE_SECRET_KEY!, host: env.STRIPE_BASE_URL }).cancelSubscription(
         entitlement.stripeSubscriptionId!,
       ),
+    );
+  }
+
+  // Наборите нямат наследник като библиотеките на организация — те са на
+  // платформата, но носят `user_id` на създателя си. Изтриването би ги отнесло
+  // за ВСИЧКИ потребители, затова се отказва, докато има такива.
+  const ownedDatasets = await countOwnedDatasets(env.DB, user.id);
+  if (ownedDatasets > 0) {
+    throw new HttpError(
+      409,
+      `Профилът ти е собственик на ${ownedDatasets} ${ownedDatasets === 1 ? 'общ набор' : 'общи набора'}. Изтрий ги от административния панел, преди да изтриеш профила — иначе изчезват за всички.`,
     );
   }
 

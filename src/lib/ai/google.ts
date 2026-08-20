@@ -9,6 +9,7 @@
 
 import type { Gemini } from '../gemini';
 import { AiError, withTimeout } from './error';
+import { logUsage, usageFrom, type TokenUsage } from './usage';
 import type { ChatModel, EmbedModel, EmbedTask, SpeechModel } from './types';
 
 export function googleChat(gemini: Gemini): ChatModel {
@@ -16,7 +17,17 @@ export function googleChat(gemini: Gemini): ChatModel {
     model: gemini.chatModel,
     generateText: (input) => gemini.generateText(input),
     generateJson: (input) => gemini.generateJson(input),
-    stream: (input) => gemini.stream(input),
+    stream: async function* (input) {
+      // usageMetadata идва по чанковете, като последното носи пълните числа —
+      // затова се пази последното видяно и се пише един ред след края.
+      let last: TokenUsage | null = null;
+      for await (const chunk of gemini.stream(input)) {
+        const usage = usageFrom(chunk.response);
+        if (usage) last = usage;
+        yield chunk;
+      }
+      if (last) logUsage(input.model ?? gemini.chatModel, last);
+    },
   };
 }
 

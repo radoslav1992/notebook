@@ -132,6 +132,26 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
     if (await send(d.id, { useCases: next }, 'uc')) patchLocal(d.id, { useCases: next });
   }
 
+  async function removeDataset(d: Dataset) {
+    if (
+      !confirm(
+        `Да изтрия ли „${d.title}“? Изчезва за всички потребители, заедно с индекса и файловете. Обратен път няма.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(`del:${d.id}`);
+    setError('');
+    try {
+      await apiSend(`/api/admin/datasets/${d.id}`, 'DELETE');
+      setDatasets((list) => list.filter((x) => x.id !== d.id));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Наборът не беше изтрит.');
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function grant(d: Dataset) {
     const email = window.prompt(`На кой имейл да дам достъп до „${d.title}“?`);
     if (!email) return;
@@ -285,6 +305,13 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
                 disabled={busy === `pub:${d.id}`}
               >
                 {d.published ? 'Скрий' : 'Публикувай'}
+              </button>
+              <button
+                class="btn btn-quiet danger"
+                onClick={() => void removeDataset(d)}
+                disabled={busy === `del:${d.id}`}
+              >
+                {busy === `del:${d.id}` ? 'Изтривам…' : 'Изтрий'}
               </button>
             </div>
           </div>

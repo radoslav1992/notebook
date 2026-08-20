@@ -635,4 +635,33 @@ await at('a call that answers in time is untouched', async () => {
   assert.equal(await withTimeout(Promise.resolve('готово'), 'тест', 5000), 'готово');
 });
 
+/* ── Разходът на токени ───────────────────────────────────────────────────── */
+
+await at('usage is read from all three response shapes, and from stream events', async () => {
+  const { usageFrom } = await import('../src/lib/ai/usage.ts');
+
+  // Gemini — с токените за мислене, точно перото, което разваля сметката тихо.
+  assert.deepEqual(
+    usageFrom({ usageMetadata: { promptTokenCount: 7000, candidatesTokenCount: 900, thoughtsTokenCount: 400 } }),
+    { input: 7000, output: 900, reasoning: 400 },
+  );
+  // Responses API — цял отговор и финално събитие на поток.
+  assert.deepEqual(
+    usageFrom({ usage: { input_tokens: 6500, output_tokens: 800, output_tokens_details: { reasoning_tokens: 120 } } }),
+    { input: 6500, output: 800, reasoning: 120 },
+  );
+  assert.deepEqual(
+    usageFrom({ type: 'response.completed', response: { usage: { input_tokens: 10, output_tokens: 2 } } }),
+    { input: 10, output: 2 },
+  );
+  // @cf — OpenAI-съвместимата форма.
+  assert.deepEqual(
+    usageFrom({ usage: { prompt_tokens: 5, completion_tokens: 3 } }),
+    { input: 5, output: 3 },
+  );
+  // Парче от поток без разход не бива да се брои за нулев разход.
+  assert.equal(usageFrom({ delta: 'текст' }), null);
+  assert.equal(usageFrom('низ'), null);
+});
+
 console.log('\n' + pass + ' checks passed');

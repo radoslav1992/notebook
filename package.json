@@ -5,7 +5,7 @@
   "private": true,
   "description": "Записки — тетрадки с източници и въпроси. Всеки отговор идва с препратка.",
   "scripts": {
-    "build": "astro build",
+    "build": "node scripts/build-console-schema.mjs && astro build",
     "check": "astro check",
     "console-schema": "node scripts/build-console-schema.mjs",
     "db:migrate": "wrangler d1 migrations apply zapiski --remote",

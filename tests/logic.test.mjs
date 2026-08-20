@@ -9,6 +9,8 @@ const { translateGoogleError } = await import('../src/lib/gemini.ts');
 const { describeThinExtraction } = await import('../src/lib/ingest.ts');
 const { STUDIO_TASKS, USE_CASES, tilesFor } = await import('../src/lib/prompts.ts');
 const { isAdmin } = await import('../src/lib/datasets.ts');
+const { missingMigrations } = await import('../src/lib/migrations.ts');
+const { EXPECTED_MIGRATIONS } = await import('../src/lib/migrations.gen.ts');
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -177,6 +179,27 @@ t('a model retired for new keys says where to change it and why not the dashboar
 });
 t('an unrecognised message is passed through rather than swallowed', () => {
   assert.equal(translateGoogleError(400, 'Something entirely new'), 'Something entirely new');
+});
+
+console.log('миграции');
+t('the base behind the code is named precisely, not just detected', () => {
+  const expected = ['0001.sql', '0002.sql', '0003.sql'];
+  assert.deepEqual(missingMigrations(expected, ['0001.sql', '0002.sql', '0003.sql']), []);
+  assert.deepEqual(missingMigrations(expected, ['0001.sql', '0002.sql']), ['0003.sql']);
+  // Прясна база: няма нищо приложено — липсва всичко, не гърми.
+  assert.deepEqual(missingMigrations(expected, []), expected);
+  // Записана в повече (примерно от стара инсталация) не бърка сметката.
+  assert.deepEqual(missingMigrations(expected, [...expected, '9999_old.sql']), []);
+});
+
+// Ако някой добави миграция и не пусне build-а, това е мястото, което ще
+// изкрещи — иначе защитата в middleware пази СТАРИЯ списък и пропуска новата.
+const { readdirSync } = await import('node:fs');
+const onDisk = readdirSync(new URL('../migrations', import.meta.url))
+  .filter((f) => /^\d+.*\.sql$/.test(f))
+  .sort();
+t('the generated list matches the migrations folder', () => {
+  assert.deepEqual(EXPECTED_MIGRATIONS, onDisk);
 });
 
 console.log('админ достъп');
