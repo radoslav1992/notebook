@@ -1,5 +1,5 @@
-import { useState } from 'preact/hooks';
-import { ApiError, apiSend } from '~/lib/client';
+import { useEffect, useState } from 'preact/hooks';
+import { ApiError, apiGet, apiSend } from '~/lib/client';
 import { USE_CASES } from '~/lib/prompts';
 
 interface Dataset {
@@ -12,14 +12,60 @@ interface Dataset {
   sourceCount: number;
 }
 
+interface NotebookRow {
+  id: string;
+  title: string;
+  emoji: string;
+  sourceCount: number;
+}
+
 export default function AdminDatasets({ datasets: initial }: { datasets: Dataset[] }) {
   const [datasets, setDatasets] = useState(initial);
+  const [notebooks, setNotebooks] = useState<NotebookRow[]>([]);
+  const [adoptId, setAdoptId] = useState('');
   const [title, setTitle] = useState('');
   const [blurb, setBlurb] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
+
+  // Своите тетрадки — за „превърни в набор“. Само с източници: празна тетрадка
+  // няма какво да даде, а изборът да е къс е по-важно от изборът да е пълен.
+  useEffect(() => {
+    apiGet<{ notebooks: NotebookRow[] }>('/api/notebooks')
+      .then((r) => setNotebooks(r.notebooks.filter((n) => n.sourceCount > 0)))
+      .catch(() => setNotebooks([]));
+  }, []);
+
+  async function adopt() {
+    if (!adoptId) return;
+    const nb = notebooks.find((n) => n.id === adoptId);
+    // Необратимо в интерфейса (обратен път няма), затова се потвърждава изрично.
+    if (
+      !nb ||
+      !confirm(
+        `„${nb.title}“ ще стане общ набор: изчезва от личните ти тетрадки, а разговорите в нея спират да се отварят. Източниците и индексът се запазват без ново вграждане. Продължавам ли?`,
+      )
+    ) {
+      return;
+    }
+    setBusy('adopt');
+    setError('');
+    try {
+      const { dataset } = await apiSend<{ dataset: Dataset }>('/api/admin/datasets/adopt', 'POST', {
+        notebookId: adoptId,
+      });
+      setDatasets((list) => [...list, dataset]);
+      setNotebooks((list) => list.filter((n) => n.id !== adoptId));
+      setAdoptId('');
+      setNote(`„${dataset.title}“ вече е набор. Добави описание с редакцията и го публикувай.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Тетрадката не беше превърната.');
+    } finally {
+      setBusy('');
+    }
+  }
 
   function patchLocal(id: string, patch: Partial<Dataset>) {
     setDatasets((list) => list.map((d) => (d.id === id ? { ...d, ...patch } : d)));
@@ -133,6 +179,42 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
           </button>
         </form>
       </div>
+
+      {notebooks.length > 0 && (
+        <div class="settings-card">
+          <div class="settings-section">От съществуваща тетрадка</div>
+          <div class="setting">
+            <div class="grow">
+              <div class="setting-name">Превърни тетрадка в набор</div>
+              <div class="setting-hint">
+                Без ново качване и без ново вграждане — индексът се запазва. Тетрадката спира да е
+                лична: изчезва от списъка ти, а разговорите в нея спират да се отварят.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <select
+                class="select"
+                value={adoptId}
+                onChange={(e) => setAdoptId((e.target as HTMLSelectElement).value)}
+              >
+                <option value="">Избери тетрадка…</option>
+                {notebooks.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.emoji} {n.title} · {n.sourceCount} изт.
+                  </option>
+                ))}
+              </select>
+              <button
+                class="btn btn-quiet"
+                onClick={() => void adopt()}
+                disabled={!adoptId || busy === 'adopt'}
+              >
+                {busy === 'adopt' ? 'Превръщам…' : 'Превърни'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div class="settings-card">
         <div class="settings-section">
