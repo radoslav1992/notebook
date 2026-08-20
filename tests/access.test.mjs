@@ -35,6 +35,13 @@ t('the app and everything it writes through needs an account', () => {
     // но без вход дори до нея не се стига.
     '/app/library/nb_1',
     '/api/orgs/org_1/members',
+    // Наборите: и четенето, и включването пипат общо съдържание.
+    '/api/datasets',
+    // Админ панелът дори не признава, че съществува — 404 за всички освен за
+    // изброените в ADMIN_EMAILS. Но и дотам без профил не се стига.
+    '/api/admin/datasets',
+    '/api/admin/datasets/nb_1',
+    '/app/admin',
   ]) {
     assert.equal(classifyRoute(p), 'guarded', p);
   }

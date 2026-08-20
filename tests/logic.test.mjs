@@ -8,6 +8,7 @@ const { pcmToWav, pcmDuration, formatDuration, concatPcm } = await import('../sr
 const { translateGoogleError } = await import('../src/lib/gemini.ts');
 const { describeThinExtraction } = await import('../src/lib/ingest.ts');
 const { STUDIO_TASKS, USE_CASES, tilesFor } = await import('../src/lib/prompts.ts');
+const { isAdmin } = await import('../src/lib/datasets.ts');
 
 let pass = 0;
 const t = (name, fn) => { fn(); pass++; console.log('  ok  ' + name); };
@@ -176,6 +177,27 @@ t('a model retired for new keys says where to change it and why not the dashboar
 });
 t('an unrecognised message is passed through rather than swallowed', () => {
   assert.equal(translateGoogleError(400, 'Something entirely new'), 'Something entirely new');
+});
+
+console.log('админ достъп');
+t('admin is a list of emails, matched case- and space-insensitively', () => {
+  const env = { ADMIN_EMAILS: ' Rado@zapiski.bg , second@zapiski.bg ' };
+  assert.equal(isAdmin(env, 'rado@zapiski.bg'), true);
+  assert.equal(isAdmin(env, '  RADO@ZAPISKI.BG  '), true, 'имейлът идва от базата, може да носи празни места');
+  assert.equal(isAdmin(env, 'second@zapiski.bg'), true);
+});
+
+t('nobody is admin when the variable is missing or empty', () => {
+  // Най-важният случай: незададена променлива не бива да значи „всички са админи“.
+  for (const env of [{}, { ADMIN_EMAILS: '' }, { ADMIN_EMAILS: '   ' }, { ADMIN_EMAILS: ',,' }]) {
+    assert.equal(isAdmin(env, 'rado@zapiski.bg'), false, JSON.stringify(env));
+  }
+});
+
+t('a user without an email is never admin', () => {
+  // Профил само с Google може да няма имейл; null не бива да съвпадне с нищо.
+  assert.equal(isAdmin({ ADMIN_EMAILS: 'rado@zapiski.bg' }, null), false);
+  assert.equal(isAdmin({ ADMIN_EMAILS: 'rado@zapiski.bg' }, ''), false);
 });
 
 console.log('материали по употреба');

@@ -31,6 +31,9 @@ const CHUNKS = [
   // чужди тетрадки
   { id: 'foreign1', source_id: 's9', notebook_id: 'nb2', ordinal: 0, page: 1, locator: 'стр. 1', text: 'ЧУЖДО едно.' },
   { id: 'foreign2', source_id: 's8', notebook_id: 'nb3', ordinal: 0, page: 1, locator: 'стр. 1', text: 'ЧУЖДО две.' },
+  // набор, на който имаме право, и набор, на който нямаме
+  { id: 'ds1', source_id: 'dsrc1', notebook_id: 'dsA', ordinal: 0, page: 3, locator: 'стр. 3', text: 'Разрешен набор.' },
+  { id: 'ds2', source_id: 'dsrc9', notebook_id: 'dsB', ordinal: 0, page: 1, locator: 'стр. 1', text: 'ЧУЖДО от набор.' },
 ];
 
 const ALL_IDS = CHUNKS.map((c) => c.id);
@@ -62,6 +65,16 @@ const db = {
         // дали readAll разчита на заявката, или сам се пази.
         if (/FROM chunks c JOIN sources s/.test(state.sql)) {
           return { results: CHUNKS };
+        }
+        // getSourcesByIds: източниците на пасажи от набор.
+        if (/FROM sources WHERE id IN/.test(state.sql)) {
+          const want = new Set(state.binds);
+          return {
+            results: [
+              { id: 'dsrc1', notebook_id: 'dsA', ordinal: 1, kind: 'PDF', name: 'Кодекс', sub: '', origin_url: null, r2_key: null, byte_size: 0, page_count: 0, char_count: 0, selected: 1, status: 'ready', error: null, doc_name: null, created_at: 0 },
+              { id: 'dsrc9', notebook_id: 'dsB', ordinal: 1, kind: 'PDF', name: 'Чужд набор', sub: '', origin_url: null, r2_key: null, byte_size: 0, page_count: 0, char_count: 0, selected: 1, status: 'ready', error: null, doc_name: null, created_at: 0 },
+            ].filter((r) => want.has(r.id)),
+          };
         }
         throw new Error('unexpected sql: ' + state.sql);
       },
@@ -165,6 +178,49 @@ keywordHits = LEAKY;
 assert.deepEqual(await retrieve(ctx, 'въпрос', []), []);
 assert.deepEqual(await readAll(ctx, []), []);
 t('no selected sources means no passages, from either path');
+
+/* ── Набори ───────────────────────────────────────────────────────────────── */
+
+// Хранилището пак връща ВСИЧКО, включително пасаж от набор, на който нямаме
+// право. Правото се решава на едно място (allowedDatasetIds) и се подава тук;
+// всичко извън подаденото трябва да отпадне, дори индексът да го е върнал.
+keywordHits = [];
+got = await retrieve(ctx, 'въпрос', sources, ['dsA']);
+assertNoLeak(got, ['s1', 's2', 'dsrc1'], 'разрешен набор');
+assert.ok(
+  got.some((p) => p.text === 'Разрешен набор.'),
+  'пасаж от разрешен набор трябва да мине',
+);
+assert.ok(
+  !got.some((p) => p.text.includes('ЧУЖДО от набор')),
+  'пасаж от неразрешен набор не бива да мине',
+);
+t('a granted dataset contributes, an ungranted one cannot');
+
+// Без подадени набори нито един пасаж от набор не бива да влезе, дори индексът
+// да ги връща — тоест изключването на набор наистина го изключва.
+got = await retrieve(ctx, 'въпрос', sources, []);
+assert.ok(
+  !got.some((p) => /набор/.test(p.text)),
+  'изключен набор не бива да участва: ' + JSON.stringify(got.map((p) => p.text)),
+);
+t('switching a dataset off actually removes it from the answer');
+
+// Номерата на набора продължават след своите: иначе един чип сочи две неща.
+got = await retrieve(ctx, 'въпрос', sources, ['dsA']);
+const dsPassage = got.find((p) => p.sourceId === 'dsrc1');
+assert.ok(dsPassage, 'пасажът от набора трябва да е тук');
+assert.ok(
+  dsPassage.sourceOrdinal > Math.max(...sources.map((s) => s.ordinal)),
+  `номерът трябва да е след своите, а е ${dsPassage.sourceOrdinal}`,
+);
+t('dataset sources are numbered after the notebook own ones');
+
+// Тетрадка без свои източници, но с набор, пак трябва да отговаря.
+got = await retrieve(ctx, 'въпрос', [], ['dsA']);
+assert.ok(got.length > 0, 'само набор също е валиден отговор');
+assertNoLeak(got, ['dsrc1'], 'само набор');
+t('a notebook with no own sources can still answer from a dataset');
 
 /* ── Обща библиотека ──────────────────────────────────────────────────────── */
 

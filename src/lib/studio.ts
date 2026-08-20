@@ -164,10 +164,19 @@ export async function generateAudioOverview(
   const writer = new PcmWriter(minutes * 60 * SAMPLE_RATE * 2 * 1.5);
   let done = 0;
 
-  const rendered = await mapWithConcurrency(segments, 2, async (segment) => {
+  const rendered = await mapWithConcurrency(segments, 2, async (segment, i) => {
+    // Всеки сегмент влиза в лога с времето си: заклещен преглед иначе показва само
+    // процент, а той не казва КОЙ сегмент не е отговорил.
+    const startedAt = Date.now();
     const part = await ctx.ai.tts.speak({
       text: `${ttsInstruction()}\n\n${segment}`,
       speakers,
+    });
+    console.log('[zapiski:tts] сегмент', {
+      job: input.jobId,
+      segment: `${i + 1}/${segments.length}`,
+      chars: segment.length,
+      ms: Date.now() - startedAt,
     });
     done++;
     // Прогресът се обновява „в движение“; редът на записа се пази отдолу.

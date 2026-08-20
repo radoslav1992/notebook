@@ -475,6 +475,59 @@ t('labels say the model and where it runs', () => {
 
 /* ── Responses API (openai/*) ─────────────────────────────────────────────── */
 
+await at('input is a plain string, not an array of messages', async () => {
+  // Масив от {role, content} дава „User Input Error“ — документираният пример е низ.
+  const ai = stubAi({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'x' }] }] });
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  await cf.generateText({ prompt: 'Един въпрос?' });
+  assert.equal(ai.calls[0].input.input, 'Един въпрос?', 'самотен въпрос минава без етикет');
+});
+
+await at('a conversation is flattened with labels', async () => {
+  const ai = stubAi({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'x' }] }] });
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  const out = [];
+  for await (const e of cf.stream({
+    contents: [
+      { role: 'user', parts: [{ text: 'Първи' }] },
+      { role: 'model', parts: [{ text: 'Отговор' }] },
+      { role: 'user', parts: [{ text: 'Втори' }] },
+    ],
+  })) out.push(e);
+  const sent = ai.calls[0].input.input;
+  assert.equal(typeof sent, 'string');
+  assert.ok(sent.includes('Потребител: Първи'), sent);
+  assert.ok(sent.includes('Асистент: Отговор'), sent);
+});
+
+await at('rejected extras are dropped and the question still goes through', async () => {
+  // Точният отказ, който видяхме: настройка, отказана като грешка в съдържанието.
+  let call = 0;
+  const seen = [];
+  const ai = {
+    run: async (_m, input) => {
+      seen.push(input);
+      if (++call === 1) throw new Error('7003: User Input Error');
+      return { output: [{ type: 'message', content: [{ type: 'output_text', text: 'Готово.' }] }] };
+    },
+  };
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna-probe' });
+  const text = await cf.generateText({ prompt: 'х', config: { temperature: 0.3 } });
+
+  assert.equal(text, 'Готово.', 'въпросът трябва да мине от втория опит');
+  assert.equal(seen.length, 2);
+  assert.ok(seen[0].reasoning, 'първият опит носи допълненията');
+  assert.equal(seen[1].reasoning, undefined, 'вторият е без тях');
+  assert.equal(seen[1].temperature, undefined);
+  assert.equal(seen[1].input, 'х', 'а съдържанието остава същото');
+
+  // Запомнено е: следващата заявка вече не хаби опит.
+  seen.length = 0;
+  await cf.generateText({ prompt: 'пак' });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].reasoning, undefined);
+});
+
 await at('an openai/* model gets input + instructions + max_output_tokens', async () => {
   const ai = stubAi({
     output: [
@@ -492,7 +545,7 @@ await at('an openai/* model gets input + instructions + max_output_tokens', asyn
   assert.equal(text, 'Отговор.', 'текстът се чете от втория елемент, не от първия');
 
   const { input } = ai.calls[0];
-  assert.deepEqual(input.input, [{ role: 'user', content: 'Въпрос?' }]);
+  assert.equal(input.input, 'Въпрос?');
   assert.equal(input.instructions, 'Бъди кратък.');
   assert.equal(input.max_output_tokens, 512, 'не max_tokens');
   assert.equal(input.messages, undefined, 'формата за @cf/* не бива да изтича тук');
@@ -531,6 +584,55 @@ await at('the Gemini and @cf shapes still get their own bodies', async () => {
   });
   assert.equal(c.calls[0].input.max_tokens, 99, '@cf/* ползва max_tokens');
   assert.equal(c.calls[0].input.max_output_tokens, undefined);
+});
+
+await at('a 7003 routing error names the model instead of guessing', async () => {
+  // Точното съобщение от Cloudflare при сгрешено име на модел.
+  const ai = { run: async () => { throw new Error('7003: User Input Error'); } };
+  const cf = new CloudflareAi({ ai, model: 'openai/gpt-5.6-luna' });
+  const err = await cf.generateText({ prompt: 'х' }).then(() => null, (e) => e);
+
+  assert.ok(err, 'трябва да хвърли');
+  assert.equal(err.status, 404, '7003 е „няма такъв адрес“, не 502');
+  assert.ok(err.message.includes('openai/gpt-5.6-luna'), 'трябва да каже КОЙ модел: ' + err.message);
+  assert.ok(/Models|\/api\/models/.test(err.message), 'и къде да се провери: ' + err.message);
+});
+
+await at('any other Workers AI failure still names the model and the shape', async () => {
+  // Иначе човекът гадае между три роли (чат, вграждания, реч) и три форми.
+  const ai = { run: async () => { throw new Error('something odd happened'); } };
+  const cf = new CloudflareAi({ ai, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' });
+  const err = await cf.generateText({ prompt: 'х' }).then(() => null, (e) => e);
+  assert.ok(err.message.includes('@cf/meta/llama-3.3-70b-instruct-fp8-fast'), err.message);
+  assert.ok(err.message.includes('messages'), 'формата също: ' + err.message);
+});
+
+await at('a hanging model call fails instead of blocking forever', async () => {
+  // Точният случай: аудио прегледът заби на 55%, защото едно повикване не върна
+  // нищо и нямаше кой да се откаже от чакането.
+  const { withTimeout } = await import('../src/lib/ai/error.ts');
+  const never = new Promise(() => {});
+  const err = await withTimeout(never, 'TTS (тест)', 20).then(() => null, (e) => e);
+
+  assert.ok(err, 'трябва да се откаже');
+  assert.equal(err.status, 504);
+  assert.ok(err.message.includes('TTS (тест)'), 'трябва да каже КОЕ е чакало: ' + err.message);
+});
+
+await at('a late rejection after the timeout does not surface as unhandled', async () => {
+  const { withTimeout } = await import('../src/lib/ai/error.ts');
+  let boom;
+  const late = new Promise((_, reject) => { boom = reject; });
+  await withTimeout(late, 'тест', 10).catch(() => {});
+  boom(new Error('дошло след като вече не чакаме'));
+  // Ако тихият catch липсваше, това би било необработено отхвърляне.
+  await new Promise((r) => setTimeout(r, 20));
+  pass += 0;
+});
+
+await at('a call that answers in time is untouched', async () => {
+  const { withTimeout } = await import('../src/lib/ai/error.ts');
+  assert.equal(await withTimeout(Promise.resolve('готово'), 'тест', 5000), 'готово');
 });
 
 console.log('\n' + pass + ' checks passed');

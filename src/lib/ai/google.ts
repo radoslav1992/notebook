@@ -8,7 +8,7 @@
  */
 
 import type { Gemini } from '../gemini';
-import { AiError } from './error';
+import { AiError, withTimeout } from './error';
 import type { ChatModel, EmbedModel, EmbedTask, SpeechModel } from './types';
 
 export function googleChat(gemini: Gemini): ChatModel {
@@ -34,7 +34,7 @@ export function googleTts(gemini: Gemini): SpeechModel {
     model: gemini.ttsModel,
     speak: async (input) => {
       try {
-        return await gemini.speak(input);
+        return await withTimeout(gemini.speak(input), `TTS (${gemini.ttsModel})`);
       } catch (err) {
         throw await withTtsCandidates(gemini, err);
       }

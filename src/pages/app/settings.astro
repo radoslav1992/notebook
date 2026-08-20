@@ -9,6 +9,7 @@ import { getSettings } from '../../lib/db';
 import { getEntitlement, getUsage } from '../../lib/limits';
 import { modelChoices } from '../../lib/ai/choices';
 import { mailer } from '../../lib/email';
+import { isAdmin } from '../../lib/datasets';
 import '../../styles/app.css';
 import '../../styles/auth.css';
 
@@ -64,7 +65,7 @@ const checkout = Astro.url.searchParams.get('checkout');
       client:load
     />
 
-    <OrgPanel emailEnabled={mailer(env).enabled} client:load />
+    <OrgPanel emailEnabled={mailer(env).enabled} isAdmin={isAdmin(env, user.email)} client:load />
 
     <SettingsView
       settings={settings}
