@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { ApiError, apiGet, apiSend } from '~/lib/client';
+import { ApiError, apiGet, apiSend, apiUpload } from '~/lib/client';
 import type { Source } from '~/lib/types';
 
 interface Props {
@@ -45,9 +45,8 @@ export default function LibraryView({ libraryId, sources: initial, canWrite }: P
     setBusy('files');
     setError('');
     try {
-      const r = await apiSend<{ sources: Source[] }>(
+      const r = await apiUpload<{ sources: Source[] }>(
         `/api/notebooks/${libraryId}/sources`,
-        'POST',
         form,
       );
       setSources((list) => [...list, ...r.sources]);

@@ -67,6 +67,12 @@ export async function apiSend<T>(
   method: 'POST' | 'PATCH' | 'DELETE',
   body?: unknown,
 ): Promise<T> {
+  // FormData не се сериализира: JSON.stringify(FormData) дава „{}“ и заявката
+  // пристига като празен JSON — сървърът после пита за url или text, а човекът е
+  // избрал файл. Точно този бъг вече се случи веднъж, затова пътят е един.
+  if (body instanceof FormData) {
+    return unwrap<T>(await fetch(path, { method, headers: headers(), body }));
+  }
   return unwrap<T>(
     await fetch(path, {
       method,
