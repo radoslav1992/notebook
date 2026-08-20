@@ -285,6 +285,22 @@ export async function adoptNotebookAsDataset(
   };
 }
 
+/**
+ * Колко общи набора притежава профилът.
+ *
+ * Наборът е тетрадка с `user_id` на създателя си, а изтриването по GDPR трие
+ * всички тетрадки на човека. Без тази проверка админ, който си изтрие профила,
+ * отнася Кодекса на труда за всички потребители — тип бъг „никой не го е
+ * помислил“, докато не се случи.
+ */
+export async function countOwnedDatasets(db: D1Database, userId: string): Promise<number> {
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS c FROM notebooks WHERE user_id = ? AND kind = 'dataset'`)
+    .bind(userId)
+    .first<{ c: number }>();
+  return row?.c ?? 0;
+}
+
 /* ── Административни ─────────────────────────────────────────────────────── */
 
 export async function publishDataset(

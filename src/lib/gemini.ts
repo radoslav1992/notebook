@@ -12,6 +12,7 @@
  */
 
 import { AiError } from './ai/error';
+import { logUsage, usageFrom } from './ai/usage';
 import { FALLBACK_CHAT_MODEL, FALLBACK_EMBED_MODEL, FALLBACK_TTS_MODEL } from './ai/defaults';
 import type { Content, GenerateConfig } from './ai/types';
 
@@ -162,7 +163,7 @@ export class Gemini {
     tools?: unknown[];
   }): Promise<GenerateResponse> {
     const model = input.model ?? this.chatModel;
-    return this.#call<GenerateResponse>(`models/${model}:generateContent`, {
+    const res = await this.#call<GenerateResponse>(`models/${model}:generateContent`, {
       contents: input.contents,
       ...(input.systemInstruction
         ? { systemInstruction: { parts: [{ text: input.systemInstruction }] } }
@@ -171,6 +172,9 @@ export class Gemini {
       generationConfig: input.config ?? {},
       safetySettings: RELAXED_SAFETY,
     });
+    const usage = usageFrom(res);
+    if (usage) logUsage(model, usage);
+    return res;
   }
 
   /** Удобен вариант: връща само текста. */

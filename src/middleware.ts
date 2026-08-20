@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { defineMiddleware } from 'astro:middleware';
 import { peekSession } from './lib/auth';
+import { checkMigrations, migrationsMessage } from './lib/migrations';
 import type { User } from './lib/types';
 
 /**
@@ -67,6 +68,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
       'Липсва връзка към D1. Пусни приложението през `npm run dev` или `wrangler dev` с настроени bindings.',
       { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } },
     );
+  }
+
+  // Преди сесията: тя чете от базата и при изоставаща схема би гръмнала първа,
+  // с 500 без следа. Проверката е кеширана — здрава база не се пита втори път.
+  const missing = await checkMigrations(env.DB);
+  if (missing.length > 0) {
+    return new Response(migrationsMessage(missing), {
+      status: 503,
+      headers: { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '30' },
+    });
   }
 
   const secret = env.SESSION_SECRET;

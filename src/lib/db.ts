@@ -191,6 +191,30 @@ export async function deleteNotebook(
   ]);
 }
 
+/**
+ * Трие набор по идентификатор, БЕЗ филтър по собственик.
+ *
+ * Наборът е на платформата, а `user_id` е само на създателя му. Изтриване през
+ * `deleteNotebook` (която филтрира по викащия) от ДРУГ админ тихо не трие нищо —
+ * а маршрутът след нея вече е махнал векторите. Затова тук собственик не се
+ * гледа, а `kind = 'dataset'` пази личните тетрадки от този път; кой има право
+ * да вика се решава горе, с `requireAdmin`.
+ */
+export async function deleteDatasetNotebook(db: D1Database, id: string): Promise<void> {
+  await db.batch([
+    db.prepare('DELETE FROM chunks WHERE notebook_id = ?').bind(id),
+    db
+      .prepare('DELETE FROM citations WHERE message_id IN (SELECT id FROM messages WHERE notebook_id = ?)')
+      .bind(id),
+    db.prepare('DELETE FROM messages WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM notes WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM sources WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM studio_jobs WHERE notebook_id = ?').bind(id),
+    db.prepare('DELETE FROM mindmaps WHERE notebook_id = ?').bind(id),
+    db.prepare(`DELETE FROM notebooks WHERE id = ? AND kind = 'dataset'`).bind(id),
+  ]);
+}
+
 /* ── Източници ───────────────────────────────────────────────────────────── */
 
 interface SourceRow {

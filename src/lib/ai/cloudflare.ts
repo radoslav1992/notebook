@@ -16,6 +16,7 @@
 
 import { AiError, withTimeout } from './error';
 import { bodyShapeFor, usesGeminiShape } from './select';
+import { logUsage, usageFrom } from './usage';
 import type {
   ChatModel,
   Content,
@@ -70,7 +71,11 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
 
   async #run(model: string, input: Record<string, unknown>): Promise<unknown> {
     try {
-      return await withTimeout(this.#ai.run(model, input), `Workers AI (${model})`);
+      const res = await withTimeout(this.#ai.run(model, input), `Workers AI (${model})`);
+      // Целите отговори носят разхода си направо; потоците се отчитат в readSse.
+      const usage = usageFrom(res);
+      if (usage) logUsage(model, usage);
+      return res;
     } catch (err) {
       throw asAiError(err, model);
     }
@@ -180,7 +185,7 @@ export class CloudflareAi implements ChatModel, EmbedModel, SpeechModel {
         });
         if (res instanceof ReadableStream) {
           STREAMS.set(model, true);
-          yield* readSse(res);
+          yield* readSse(res, model);
           return;
         }
         // Прие „stream“, но върна цял отговор — приемаме го и не пробваме пак.
@@ -458,7 +463,7 @@ function flatten(contents: Content[]): string {
 }
 
 /** SSE от Workers AI: `data: {...}` на всеки ред, в двете възможни форми. */
-async function* readSse(stream: ReadableStream): AsyncGenerator<{ text: string }> {
+async function* readSse(stream: ReadableStream, model: string): AsyncGenerator<{ text: string }> {
   const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
   while (true) {
@@ -478,6 +483,9 @@ async function* readSse(stream: ReadableStream): AsyncGenerator<{ text: string }
       } catch {
         continue;
       }
+      // Разходът идва еднократно, във финалното събитие на потока.
+      const usage = usageFrom(parsed);
+      if (usage) logUsage(model, usage);
       const text = textFrom(parsed);
       if (text) yield { text };
     }
