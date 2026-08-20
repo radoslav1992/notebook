@@ -14,6 +14,7 @@ import {
 import {
   HttpError,
   createSource,
+  failStaleSources,
   getChunksForSources,
   listSources,
   touchNotebook,
@@ -29,6 +30,8 @@ export const prerender = false;
 export const GET: APIRoute = handler(async (ctx) => {
   const id = ctx.params.id!;
   await requireNotebook(ctx, id, { library: 'read' });
+  // Точно този маршрут върти опресняването — тук закъсалото трябва да се обяви.
+  await failStaleSources(env.DB, id);
   const sources = await listSources(env.DB, id);
   return json({ sources });
 });

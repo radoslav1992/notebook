@@ -355,6 +355,9 @@
 .src-item:hover {
   background: var(--hover);
 }
+.src-item.is-waiting {
+  cursor: default;
+}
 .src-item.is-error .src-sub {
   color: #a3392b;
 }
