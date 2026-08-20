@@ -349,7 +349,10 @@ export async function* answerStream(
   | { type: 'delta'; text: string }
   | { type: 'done'; text: string; citations: Citation[] }
 > {
-  if (input.sources.length === 0) {
+  // Празно значи „нито свои източници, нито включен набор“. Проверката е писана
+  // преди наборите и гледаше само своите — тетрадка САМО с Кодекса на труда
+  // получаваше „няма избрани източници“ при отметнат набор вляво.
+  if (input.sources.length === 0 && (input.datasets ?? []).length === 0) {
     const text =
       'Няма избрани източници. Отбележи поне един отляво или добави нов, за да мога да отговоря само по него.';
     yield { type: 'delta', text };

@@ -30,6 +30,15 @@ const db = {
           const want = new Set(state.binds);
           return { results: CHUNKS.filter((c) => want.has(c.id)) };
         }
+        // getSourcesByIds — източниците на пасажи от набор.
+        if (/FROM sources WHERE id IN/.test(state.sql)) {
+          const want = new Set(state.binds);
+          return {
+            results: [
+              { id: 's9', notebook_id: 'nbOTHER', ordinal: 1, kind: 'PDF', name: 'Кодекс на труда', sub: '', origin_url: null, r2_key: null, byte_size: 0, page_count: 0, char_count: 0, selected: 1, status: 'ready', error: null, doc_name: null, created_at: 0 },
+            ].filter((r) => want.has(r.id)),
+          };
+        }
         if (/FROM chunks_fts/.test(state.sql)) {
           if (keywordHits === null) throw new Error('no such table: chunks_fts');
           return { results: keywordHits.map((id) => ({ chunk_id: id })) };
@@ -136,6 +145,19 @@ assert.deepEqual(degraded.map((p) => p.text), got.map((p) => p.text));
 t('an unavailable FTS index degrades to vector-only instead of failing');
 
 keywordHits = [];
+
+// Тетрадка САМО с набор: ранната проверка „няма избрани източници“ е писана
+// преди наборите и отрязваше въпроса при отметнат набор вляво. Пасажът cX е в
+// nbOTHER, тоест влиза само по пътя на наборите.
+const dsEvents = [];
+for await (const e of answerStream(ctx, {
+  notebookId: 'nb1', question: 'Обобщи целите.', sources: [], datasets: ['nbOTHER'], history: [],
+})) dsEvents.push(e);
+const dsDone = dsEvents.at(-1);
+assert.ok(!dsDone.text.includes('Няма избрани източници'), dsDone.text);
+assert.equal(dsEvents[0].type, 'passages');
+assert.ok(dsEvents[0].count >= 1, 'наборът трябва да даде поне един пасаж');
+t('a notebook with only a dataset answers instead of claiming no sources');
 
 /* ── answerStream over the real SSE path ─────────────────────────────────── */
 
