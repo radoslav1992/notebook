@@ -9,6 +9,7 @@ interface Dataset {
   blurb: string;
   useCases: string[];
   published: boolean;
+  isPublic: boolean;
   sourceCount: number;
 }
 
@@ -117,6 +118,11 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
     }
     const next = !d.published;
     if (await send(d.id, { published: next }, 'pub')) patchLocal(d.id, { published: next });
+  }
+
+  async function togglePublic(d: Dataset) {
+    const next = !d.isPublic;
+    if (await send(d.id, { isPublic: next }, 'free')) patchLocal(d.id, { isPublic: next });
   }
 
   async function toggleUseCase(d: Dataset, value: string) {
@@ -238,6 +244,7 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
                   {' '}
                   · {d.sourceCount} {d.sourceCount === 1 ? 'източник' : 'източника'}
                   {d.published ? '' : ' · непубликуван'}
+                  {d.isPublic ? ' · свободен за всички' : ' · само с даден достъп'}
                 </span>
               </div>
               {d.blurb && <div class="setting-hint">{d.blurb}</div>}
@@ -259,9 +266,19 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
               <a class="btn btn-quiet" href={`/app/admin/dataset/${d.id}`}>
                 Съдържание
               </a>
-              <button class="btn btn-quiet" onClick={() => void grant(d)} disabled={busy === `grant:${d.id}`}>
-                Дай достъп
+              <button
+                class="btn btn-quiet"
+                onClick={() => void togglePublic(d)}
+                disabled={busy === `free:${d.id}`}
+                title="Свободният набор се вижда от всеки влязъл, без „Дай достъп“."
+              >
+                {d.isPublic ? 'Направи с достъп' : 'Направи свободен'}
               </button>
+              {!d.isPublic && (
+                <button class="btn btn-quiet" onClick={() => void grant(d)} disabled={busy === `grant:${d.id}`}>
+                  Дай достъп
+                </button>
+              )}
               <button
                 class={`btn btn-quiet ${d.published ? 'danger' : ''}`}
                 onClick={() => void togglePublished(d)}

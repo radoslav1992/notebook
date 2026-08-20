@@ -41,6 +41,8 @@ export interface Dataset {
   blurb: string;
   useCases: string[];
   published: boolean;
+  /** Свободен за всеки влязъл, без грант. */
+  isPublic: boolean;
   sourceCount: number;
   /** Включен ли е в тетрадката, за която питаме. */
   on?: boolean;
@@ -53,6 +55,7 @@ interface DatasetRow {
   blurb: string;
   use_cases: string;
   published_at: number | null;
+  is_public: number;
   source_count: number;
   on_here?: number;
 }
@@ -65,6 +68,7 @@ function toDataset(r: DatasetRow): Dataset {
     blurb: r.blurb,
     useCases: r.use_cases ? r.use_cases.split(',').filter(Boolean) : [],
     published: r.published_at !== null,
+    isPublic: r.is_public === 1,
     sourceCount: r.source_count,
     ...(r.on_here === undefined ? {} : { on: r.on_here === 1 }),
   };
@@ -103,6 +107,7 @@ export async function createDataset(
     blurb: input.blurb ?? '',
     useCases: input.useCases ?? [],
     published: false,
+    isPublic: false,
     sourceCount: 0,
   };
 }
@@ -111,7 +116,7 @@ export async function createDataset(
 export async function listAllDatasets(db: D1Database): Promise<Dataset[]> {
   const { results } = await db
     .prepare(
-      `SELECT n.id, n.title, n.emoji, m.blurb, m.use_cases, m.published_at, ${LIVE_SOURCES}
+      `SELECT n.id, n.title, n.emoji, m.blurb, m.use_cases, m.published_at, m.is_public, ${LIVE_SOURCES}
        FROM notebooks n JOIN datasets_meta m ON m.notebook_id = n.id
        WHERE n.kind = 'dataset' ORDER BY n.title`,
     )
@@ -131,18 +136,20 @@ export async function listGrantedDatasets(
   userId: string,
   notebookId?: string,
 ): Promise<Dataset[]> {
+  // LEFT JOIN, а не JOIN: свободният набор няма ред в dataset_grants и вътрешното
+  // съединение би го скрило точно от хората, за които е свободен.
   const { results } = await db
     .prepare(
-      `SELECT n.id, n.title, n.emoji, m.blurb, m.use_cases, m.published_at, ${LIVE_SOURCES},
+      `SELECT n.id, n.title, n.emoji, m.blurb, m.use_cases, m.published_at, m.is_public, ${LIVE_SOURCES},
               (SELECT COUNT(*) FROM notebook_datasets nd
                 WHERE nd.dataset_id = n.id AND nd.notebook_id = ?) AS on_here
        FROM notebooks n
          JOIN datasets_meta m ON m.notebook_id = n.id
-         JOIN dataset_grants g ON g.dataset_id = n.id
+         LEFT JOIN dataset_grants g ON g.dataset_id = n.id AND g.user_id = ?
        WHERE n.kind = 'dataset'
          AND m.published_at IS NOT NULL
-         AND g.user_id = ?
-         AND (g.expires_at IS NULL OR g.expires_at > ?)
+         AND (m.is_public = 1
+              OR (g.user_id IS NOT NULL AND (g.expires_at IS NULL OR g.expires_at > ?)))
        ORDER BY n.title`,
     )
     .bind(notebookId ?? '', userId, now())
@@ -167,13 +174,13 @@ export async function allowedDatasetIds(
     .prepare(
       `SELECT nd.dataset_id FROM notebook_datasets nd
          JOIN datasets_meta m ON m.notebook_id = nd.dataset_id
-         JOIN dataset_grants g ON g.dataset_id = nd.dataset_id
+         LEFT JOIN dataset_grants g ON g.dataset_id = nd.dataset_id AND g.user_id = ?
        WHERE nd.notebook_id = ?
          AND m.published_at IS NOT NULL
-         AND g.user_id = ?
-         AND (g.expires_at IS NULL OR g.expires_at > ?)`,
+         AND (m.is_public = 1
+              OR (g.user_id IS NOT NULL AND (g.expires_at IS NULL OR g.expires_at > ?)))`,
     )
-    .bind(notebookId, userId, now())
+    .bind(userId, notebookId, now())
     .all<{ dataset_id: string }>();
   return (results ?? []).map((r) => r.dataset_id);
 }
@@ -196,10 +203,12 @@ export async function setNotebookDataset(
 
   const granted = await db
     .prepare(
-      `SELECT 1 AS ok FROM dataset_grants g JOIN datasets_meta m ON m.notebook_id = g.dataset_id
-       WHERE g.user_id = ? AND g.dataset_id = ?
+      `SELECT 1 AS ok FROM datasets_meta m
+         LEFT JOIN dataset_grants g ON g.dataset_id = m.notebook_id AND g.user_id = ?
+       WHERE m.notebook_id = ?
          AND m.published_at IS NOT NULL
-         AND (g.expires_at IS NULL OR g.expires_at > ?)`,
+         AND (m.is_public = 1
+              OR (g.user_id IS NOT NULL AND (g.expires_at IS NULL OR g.expires_at > ?)))`,
     )
     .bind(userId, datasetId, now())
     .first<{ ok: number }>();
@@ -271,6 +280,7 @@ export async function adoptNotebookAsDataset(
     blurb: input.blurb ?? '',
     useCases: input.useCases ?? [],
     published: false,
+    isPublic: false,
     sourceCount: row.total,
   };
 }
@@ -285,6 +295,18 @@ export async function publishDataset(
   await db
     .prepare('UPDATE datasets_meta SET published_at = ? WHERE notebook_id = ?')
     .bind(published ? now() : null, datasetId)
+    .run();
+}
+
+/** Свободен ⇄ с достъп. Отделно от publish: двата ключа са различни решения. */
+export async function setDatasetPublic(
+  db: D1Database,
+  datasetId: string,
+  isPublic: boolean,
+): Promise<void> {
+  await db
+    .prepare('UPDATE datasets_meta SET is_public = ? WHERE notebook_id = ?')
+    .bind(isPublic ? 1 : 0, datasetId)
     .run();
 }
 
