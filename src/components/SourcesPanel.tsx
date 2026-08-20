@@ -190,9 +190,11 @@ export default function SourcesPanel({
         {sources.map((s) => (
           <button
             key={s.id}
-            class={`src-item ${s.status === 'error' ? 'is-error' : ''}`}
-            onClick={() => onToggle(s)}
-            disabled={s.status !== 'ready'}
+            class={`src-item ${s.status === 'error' ? 'is-error' : ''} ${s.status !== 'ready' ? 'is-waiting' : ''}`}
+            /* Не е native disabled: изключеният бутон поглъща кликовете и на
+               децата си, тоест „ד за премахване спираше да работи точно за
+               заклещен източник — единствения, който човек иска да махне. */
+            onClick={() => s.status === 'ready' && onToggle(s)}
             title={s.status === 'error' ? (s.error ?? 'Грешка') : s.name}
           >
             <span class="src-kind">{s.kind}</span>

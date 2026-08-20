@@ -233,6 +233,31 @@ function toSource(r: SourceRow): Source {
   };
 }
 
+/**
+ * След колко време „обработва се“ значи „умря“.
+ *
+ * Голям PDF минава за минути; петнадесет е с многократен запас. Огледално на
+ * заклещените студио задачи: убит isolate (най-често deploy по средата на
+ * обработката) оставя източника в „indexing“ завинаги, интерфейсът се опреснява
+ * до безкрай, а никой не казва, че няма какво да чака.
+ */
+export const SOURCE_STALE_MS = 15 * 60_000;
+
+/** Обявява закъсалите източници за провалени — вика се при всяко четене на списъка. */
+export async function failStaleSources(db: D1Database, notebookId: string): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE sources SET status = 'error', error = ?
+       WHERE notebook_id = ? AND status IN ('pending', 'indexing') AND created_at < ?`,
+    )
+    .bind(
+      'Обработката прекъсна — най-често от ново пускане на приложението по средата ѝ. Премахни източника и го качи наново.',
+      notebookId,
+      now() - SOURCE_STALE_MS,
+    )
+    .run();
+}
+
 export async function listSources(db: D1Database, notebookId: string): Promise<Source[]> {
   const { results } = await db
     .prepare('SELECT * FROM sources WHERE notebook_id = ? ORDER BY ordinal')
