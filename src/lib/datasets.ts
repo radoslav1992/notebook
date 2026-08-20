@@ -213,6 +213,68 @@ export async function setNotebookDataset(
     .run();
 }
 
+/**
+ * Превръща вече съществуваща тетрадка в набор.
+ *
+ * Смисълът е да НЯМА ново вграждане. Векторите носят в метаданните `notebookId`
+ * на тетрадката, а метаданните се менят само с презаписване на векторите — тоест
+ * преместване на източник в друга тетрадка значи ново вграждане на всичко. Понеже
+ * наборът Е тетрадка, обръщането на самата тетрадка запазва съвпадението и
+ * индексът остава както си е.
+ *
+ * Цената е, че тетрадката спира да е лична: изчезва от списъка, а разговорите и
+ * бележките в нея остават в базата, но вече не се отварят. Затова се иска изрично
+ * действие от админ, а не се предлага на всеки.
+ */
+export async function adoptNotebookAsDataset(
+  db: D1Database,
+  ownerId: string,
+  notebookId: string,
+  input: { blurb?: string; useCases?: string[] } = {},
+): Promise<Dataset> {
+  const row = await db
+    .prepare(
+      `SELECT n.id, n.title, n.emoji,
+              (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) AS total,
+              (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id AND s.status = 'ready') AS ready
+       FROM notebooks n
+       WHERE n.id = ? AND n.user_id = ? AND n.kind = 'personal'`,
+    )
+    .bind(notebookId, ownerId)
+    .first<{ id: string; title: string; emoji: string; total: number; ready: number }>();
+
+  if (!row) throw new HttpError(404, 'Тетрадката не е намерена.');
+  if (row.total === 0) throw new HttpError(400, 'Тетрадката е празна.');
+  // Наполовина обработена тетрадка би станала наполовина индексиран набор, а по
+  // него отговорите изглеждат произволни.
+  if (row.ready !== row.total) {
+    throw new HttpError(
+      409,
+      `${row.total - row.ready} от ${row.total} източника още се обработват. Изчакай и опитай пак.`,
+    );
+  }
+
+  await db.batch([
+    db.prepare(`UPDATE notebooks SET kind = 'dataset' WHERE id = ?`).bind(notebookId),
+    db
+      .prepare(
+        `INSERT INTO datasets_meta (notebook_id, blurb, use_cases) VALUES (?, ?, ?)
+         ON CONFLICT(notebook_id) DO UPDATE SET blurb = excluded.blurb, use_cases = excluded.use_cases`,
+      )
+      .bind(notebookId, input.blurb ?? '', (input.useCases ?? []).join(',')),
+  ]);
+
+  return {
+    id: row.id,
+    title: row.title,
+    emoji: row.emoji,
+    blurb: input.blurb ?? '',
+    useCases: input.useCases ?? [],
+    published: false,
+    sourceCount: row.total,
+  };
+}
+
 /* ── Административни ─────────────────────────────────────────────────────── */
 
 export async function publishDataset(
