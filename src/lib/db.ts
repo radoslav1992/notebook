@@ -215,6 +215,49 @@ export async function deleteDatasetNotebook(db: D1Database, id: string): Promise
   ]);
 }
 
+/**
+ * Трие организация с библиотеката ѝ — редовете в D1. Векторите и файловете ги
+ * чисти маршрутът, който първо ги е събрал (същият ред като при набор).
+ *
+ * Изрични DELETE-и, а не разчитане на каскади: включванията на библиотечни
+ * източници в чужди лични тетрадки (`notebook_library_sources`) сочат източници,
+ * не тетрадката, и трябва да си отидат преди тях. Кой има право е проверено горе
+ * (`requireOrgOwner`); `kind = 'library'` пази личните тетрадки от този път.
+ */
+export async function deleteOrgRows(
+  db: D1Database,
+  orgId: string,
+  libraryId: string | null,
+): Promise<void> {
+  const stmts = [];
+  if (libraryId) {
+    stmts.push(
+      db
+        .prepare(
+          'DELETE FROM notebook_library_sources WHERE source_id IN (SELECT id FROM sources WHERE notebook_id = ?)',
+        )
+        .bind(libraryId),
+      db.prepare('DELETE FROM chunks WHERE notebook_id = ?').bind(libraryId),
+      db
+        .prepare('DELETE FROM citations WHERE message_id IN (SELECT id FROM messages WHERE notebook_id = ?)')
+        .bind(libraryId),
+      db.prepare('DELETE FROM messages WHERE notebook_id = ?').bind(libraryId),
+      db.prepare('DELETE FROM notes WHERE notebook_id = ?').bind(libraryId),
+      db.prepare('DELETE FROM sources WHERE notebook_id = ?').bind(libraryId),
+      db.prepare('DELETE FROM studio_jobs WHERE notebook_id = ?').bind(libraryId),
+      db.prepare('DELETE FROM mindmaps WHERE notebook_id = ?').bind(libraryId),
+      db.prepare(`DELETE FROM notebooks WHERE id = ? AND kind = 'library'`).bind(libraryId),
+    );
+  }
+  stmts.push(
+    db.prepare('DELETE FROM org_invites WHERE org_id = ?').bind(orgId),
+    db.prepare('DELETE FROM org_usage_counters WHERE org_id = ?').bind(orgId),
+    db.prepare('DELETE FROM org_members WHERE org_id = ?').bind(orgId),
+    db.prepare('DELETE FROM organizations WHERE id = ?').bind(orgId),
+  );
+  await db.batch(stmts);
+}
+
 /* ── Източници ───────────────────────────────────────────────────────────── */
 
 interface SourceRow {

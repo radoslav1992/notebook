@@ -152,6 +152,12 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
     }
   }
 
+  async function rename(d: Dataset) {
+    const title = window.prompt('Ново име на набора:', d.title)?.trim();
+    if (!title || title === d.title) return;
+    if (await send(d.id, { title }, 'ren')) patchLocal(d.id, { title });
+  }
+
   async function grant(d: Dataset) {
     const email = window.prompt(`На кой имейл да дам достъп до „${d.title}“?`);
     if (!email) return;
@@ -286,6 +292,13 @@ export default function AdminDatasets({ datasets: initial }: { datasets: Dataset
               <a class="btn btn-quiet" href={`/app/admin/dataset/${d.id}`}>
                 Съдържание
               </a>
+              <button
+                class="btn btn-quiet"
+                onClick={() => void rename(d)}
+                disabled={busy === `ren:${d.id}`}
+              >
+                Преименувай
+              </button>
               <button
                 class="btn btn-quiet"
                 onClick={() => void togglePublic(d)}

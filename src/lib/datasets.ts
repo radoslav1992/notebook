@@ -346,6 +346,18 @@ export async function updateDatasetMeta(
   await db.prepare(`UPDATE datasets_meta SET ${sets.join(', ')} WHERE notebook_id = ?`).bind(...binds).run();
 }
 
+/** Името живее на тетрадката (наборът Е тетрадка), затова не е в `updateDatasetMeta`. */
+export async function renameDataset(db: D1Database, id: string, title: string): Promise<void> {
+  const clean = title.trim();
+  if (clean.length < 2) throw new HttpError(400, 'Името е твърде кратко.');
+  if (clean.length > 120) throw new HttpError(400, 'Името е твърде дълго.');
+  const res = await db
+    .prepare(`UPDATE notebooks SET title = ? WHERE id = ? AND kind = 'dataset'`)
+    .bind(clean, id)
+    .run();
+  if (!res.meta.changes) throw new HttpError(404, 'Наборът не е намерен.');
+}
+
 /** Дава достъп. Засега се вика от админ панела; после — от плащането. */
 export async function grantDataset(
   db: D1Database,

@@ -233,6 +233,129 @@ export async function releaseOrgsOfUser(db: D1Database, userId: string): Promise
   }
 }
 
+/* ── Членство: премахване, роли, напускане ───────────────────────────────── */
+
+async function membershipRole(
+  db: D1Database,
+  orgId: string,
+  userId: string,
+): Promise<OrgRole | null> {
+  const row = await db
+    .prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?')
+    .bind(orgId, userId)
+    .first<{ role: string }>();
+  return row ? (row.role as OrgRole) : null;
+}
+
+/**
+ * Премахва член — или самия себе си (напускане). Правилата:
+ *
+ * - Всеки освен собственика може да напусне. Собственикът първо прехвърля
+ *   собствеността или изтрива организацията — иначе тя остава без управа, а
+ *   после наследяването при изтрит профил би решавало тихо това, което тук може
+ *   да се откаже гласно.
+ * - Собственикът премахва всекиго; администраторът — само членове. Администратор
+ *   срещу администратор е покана за война между равни — решава я собственикът.
+ */
+export async function removeMember(
+  db: D1Database,
+  orgId: string,
+  actorId: string,
+  targetId: string,
+): Promise<void> {
+  const actor = await membershipRole(db, orgId, actorId);
+  if (!actor) throw new HttpError(404, 'Организацията не е намерена.');
+  const target = await membershipRole(db, orgId, targetId);
+  if (!target) throw new HttpError(404, 'Този човек не е член на организацията.');
+
+  if (actorId === targetId) {
+    if (actor === 'owner') {
+      throw new HttpError(
+        409,
+        'Собственикът не напуска: първо прехвърли собствеността или изтрий организацията.',
+      );
+    }
+  } else {
+    if (actor === 'member') {
+      throw new HttpError(403, 'Само собственик или администратор премахва членове.');
+    }
+    if (target === 'owner') throw new HttpError(403, 'Собственикът не може да бъде премахнат.');
+    if (actor === 'admin' && target === 'admin') {
+      throw new HttpError(403, 'Администратор не премахва администратор — само собственикът.');
+    }
+  }
+
+  await db
+    .prepare('DELETE FROM org_members WHERE org_id = ? AND user_id = ?')
+    .bind(orgId, targetId)
+    .run();
+}
+
+/**
+ * Смяна на роля — само собственикът. `role='owner'` е прехвърляне: новият става
+ * собственик, старият пада до администратор, а библиотеката минава на името на
+ * новия (същото счетоводство като при наследяване — виж `releaseOrgsOfUser`).
+ */
+export async function changeRole(
+  db: D1Database,
+  orgId: string,
+  actorId: string,
+  targetId: string,
+  role: OrgRole,
+): Promise<void> {
+  if (role !== 'owner' && role !== 'admin' && role !== 'member') {
+    throw new HttpError(400, 'Непозната роля.');
+  }
+  const actor = await membershipRole(db, orgId, actorId);
+  if (!actor) throw new HttpError(404, 'Организацията не е намерена.');
+  if (actor !== 'owner') throw new HttpError(403, 'Само собственикът сменя роли.');
+  if (actorId === targetId) {
+    throw new HttpError(400, 'Своята роля не се сменя — прехвърли собствеността на друг.');
+  }
+  const target = await membershipRole(db, orgId, targetId);
+  if (!target) throw new HttpError(404, 'Този човек не е член на организацията.');
+
+  if (role === 'owner') {
+    await db.batch([
+      db
+        .prepare(`UPDATE org_members SET role = 'owner' WHERE org_id = ? AND user_id = ?`)
+        .bind(orgId, targetId),
+      db
+        .prepare(`UPDATE org_members SET role = 'admin' WHERE org_id = ? AND user_id = ?`)
+        .bind(orgId, actorId),
+      db
+        .prepare(`UPDATE notebooks SET user_id = ? WHERE org_id = ? AND kind = 'library'`)
+        .bind(targetId, orgId),
+    ]);
+    return;
+  }
+
+  await db
+    .prepare('UPDATE org_members SET role = ? WHERE org_id = ? AND user_id = ?')
+    .bind(role, orgId, targetId)
+    .run();
+}
+
+/**
+ * Проверява, че викащият е собственик, и връща id-то на библиотеката — редовете
+ * на самото изтриване са в `db.ts` (`deleteOrgRows`), а маршрутът първо събира
+ * какво да чисти във Vectorize и R2.
+ */
+export async function requireOrgOwner(
+  db: D1Database,
+  orgId: string,
+  userId: string,
+): Promise<{ libraryId: string | null }> {
+  const role = await membershipRole(db, orgId, userId);
+  if (!role) throw new HttpError(404, 'Организацията не е намерена.');
+  if (role !== 'owner') throw new HttpError(403, 'Само собственикът изтрива организацията.');
+  const row = await db
+    .prepare(`SELECT id FROM notebooks WHERE org_id = ? AND kind = 'library' LIMIT 1`)
+    .bind(orgId)
+    .first<{ id: string }>();
+  return { libraryId: row?.id ?? null };
+}
+
 /* ── Админ: платени места ────────────────────────────────────────────────── */
 
 export interface OrgAdminRow {

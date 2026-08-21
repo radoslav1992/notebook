@@ -6,7 +6,7 @@ const {
   markEventProcessed, findUserByCustomerId, QuotaError, adminSetPlan,
 } = await import('../src/lib/limits.ts');
 const { currentPeriod, PLANS, BUSINESS } = await import('../src/lib/plans.ts');
-const { setOrgSeats } = await import('../src/lib/orgs.ts');
+const { setOrgSeats, removeMember, changeRole } = await import('../src/lib/orgs.ts');
 
 /* ── A tiny in-memory stand-in for the bits of D1 that limits.ts uses ────── */
 
@@ -18,6 +18,9 @@ function makeDb() {
   const orgs = new Map();          // orgId -> {seats}
   const orgMembers = new Set();    // `${orgId}|${userId}`
   const orgCounters = new Map();   // `${orgId}|${period}` -> questions
+  const orgRoles = new Map();      // `${orgId}|${userId}` -> role
+  const libOwners = new Map();     // orgId -> userId (собственикът на библиотеката)
+  const dsTitles = new Map();      // notebookId -> title (само набори)
 
   function run(sql, binds) {
     const s = sql.replace(/\s+/g, ' ').trim();
@@ -85,6 +88,35 @@ function makeDb() {
       org.seats = seats;
       return { run: { meta: { changes: 1 } } };
     }
+    if (s.startsWith('SELECT role FROM org_members')) {
+      const role = orgRoles.get(`${binds[0]}|${binds[1]}`);
+      return { first: role ? { role } : null };
+    }
+    if (s.startsWith('DELETE FROM org_members')) {
+      const key = `${binds[0]}|${binds[1]}`;
+      const had = orgRoles.delete(key);
+      orgMembers.delete(key);
+      return { run: { meta: { changes: had ? 1 : 0 } } };
+    }
+    {
+      const m = /^UPDATE org_members SET role = (?:'(\w+)'|\?) WHERE org_id = \? AND user_id = \?$/.exec(s);
+      if (m) {
+        const role = m[1] ?? binds[0];
+        const [org, user] = m[1] ? binds : binds.slice(1);
+        orgRoles.set(`${org}|${user}`, role);
+        return { run: { meta: { changes: 1 } } };
+      }
+    }
+    if (s.startsWith('UPDATE notebooks SET user_id')) {
+      libOwners.set(binds[1], binds[0]);
+      return { run: { meta: { changes: 1 } } };
+    }
+    if (s.startsWith('UPDATE notebooks SET title')) {
+      const [title, id] = binds;
+      if (!dsTitles.has(id)) return { run: { meta: { changes: 0 } } };
+      dsTitles.set(id, title);
+      return { run: { meta: { changes: 1 } } };
+    }
     throw new Error('unexpected sql: ' + s);
   }
 
@@ -99,8 +131,18 @@ function makeDb() {
       };
       return api;
     },
+    async batch(stmts) {
+      const out = [];
+      for (const st of stmts) out.push(await st.run());
+      return out;
+    },
     // test helpers
     setNotebooks: (user, n) => notebooks.set(user, n),
+    setRole: (org, user, role) => orgRoles.set(`${org}|${user}`, role),
+    getRole: (org, user) => orgRoles.get(`${org}|${user}`),
+    getLibOwner: (org) => libOwners.get(org),
+    addDataset: (id, title) => dsTitles.set(id, title ?? ''),
+    getDatasetTitle: (id) => dsTitles.get(id),
     setOrg: (id, seats) => orgs.set(id, { seats }),
     getOrgSeats: (id) => orgs.get(id)?.seats,
     addMember: (org, user) => orgMembers.add(`${org}|${user}`),
@@ -295,6 +337,73 @@ for (const bad of [2.5, -1, 10_001, Number.NaN]) {
 }
 await assert.rejects(() => setOrgSeats(db, 'org_nope', 5), /организация/);
 t('seats validate as a bounded integer and an unknown org is refused');
+
+console.log('\norg membership rules');
+db = makeDb();
+db.setRole('org_1', 'u_owner', 'owner');
+db.setRole('org_1', 'u_admin', 'admin');
+db.setRole('org_1', 'u_admin2', 'admin');
+db.setRole('org_1', 'u_member', 'member');
+
+await removeMember(db, 'org_1', 'u_member', 'u_member');
+assert.equal(db.getRole('org_1', 'u_member'), undefined);
+t('a member leaves freely by removing themself');
+
+await assert.rejects(() => removeMember(db, 'org_1', 'u_owner', 'u_owner'), /прехвърли собствеността/);
+t('the owner cannot leave without transferring or deleting');
+
+db.setRole('org_1', 'u_member', 'member');
+await removeMember(db, 'org_1', 'u_admin', 'u_member');
+assert.equal(db.getRole('org_1', 'u_member'), undefined);
+t('an admin removes a member');
+
+await assert.rejects(() => removeMember(db, 'org_1', 'u_admin', 'u_admin2'), /само собственикът/);
+await assert.rejects(() => removeMember(db, 'org_1', 'u_admin', 'u_owner'), /не може да бъде премахнат/);
+t('an admin cannot remove another admin or the owner');
+
+db.setRole('org_1', 'u_member', 'member');
+await assert.rejects(() => removeMember(db, 'org_1', 'u_member', 'u_admin'), /Само собственик или администратор/);
+t('a member cannot remove anyone else');
+
+await removeMember(db, 'org_1', 'u_owner', 'u_admin2');
+assert.equal(db.getRole('org_1', 'u_admin2'), undefined);
+t('the owner removes an admin');
+
+await assert.rejects(() => removeMember(db, 'org_1', 'u_owner', 'u_gone'), /не е член/);
+t('removing a non-member is a 404, not a silent no-op');
+
+await changeRole(db, 'org_1', 'u_owner', 'u_member', 'admin');
+assert.equal(db.getRole('org_1', 'u_member'), 'admin');
+await changeRole(db, 'org_1', 'u_owner', 'u_member', 'member');
+assert.equal(db.getRole('org_1', 'u_member'), 'member');
+t('the owner promotes and demotes between admin and member');
+
+await assert.rejects(() => changeRole(db, 'org_1', 'u_admin', 'u_member', 'admin'), /Само собственикът/);
+await assert.rejects(() => changeRole(db, 'org_1', 'u_owner', 'u_owner', 'member'), /Своята роля/);
+await assert.rejects(() => changeRole(db, 'org_1', 'u_owner', 'u_member', 'boss'), /Непозната роля/);
+t('role changes refuse non-owners, self-changes and unknown roles');
+
+await changeRole(db, 'org_1', 'u_owner', 'u_admin', 'owner');
+assert.equal(db.getRole('org_1', 'u_admin'), 'owner');
+assert.equal(db.getRole('org_1', 'u_owner'), 'admin');
+assert.equal(db.getLibOwner('org_1'), 'u_admin');
+t('an ownership transfer swaps the roles and moves the library to the new owner');
+
+console.log('\ndataset rename');
+{
+  const { renameDataset } = await import('../src/lib/datasets.ts');
+  db = makeDb();
+  db.addDataset('nb_ds', 'Старо име');
+  await renameDataset(db, 'nb_ds', '  Кодекс на труда 2026  ');
+  assert.equal(db.getDatasetTitle('nb_ds'), 'Кодекс на труда 2026');
+  t('renaming trims and stores the new title');
+
+  await assert.rejects(() => renameDataset(db, 'nb_ds', ' а '), /кратко/);
+  await assert.rejects(() => renameDataset(db, 'nb_ds', 'х'.repeat(121)), /дълго/);
+  await assert.rejects(() => renameDataset(db, 'nb_nope', 'Ново име'), /не е намерен/);
+  assert.equal(db.getDatasetTitle('nb_ds'), 'Кодекс на труда 2026');
+  t('bad titles and unknown datasets are refused without touching anything');
+}
 
 console.log('\nwebhook idempotency');
 db = makeDb();
