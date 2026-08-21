@@ -45,7 +45,9 @@ export const POST: APIRoute = handler(async (ctx) => {
   if (question.length > 4000) throw new HttpError(400, 'Въпросът е твърде дълъг.');
 
   requireVerified(ctx);
-  await assertCanAsk(env.DB, ctx.locals.user.id);
+  // Кой „джоб“ плаща въпроса (личният план или пакетът на организация) се
+  // решава тук и се подава на отчитането — двете трябва да гледат едно и също.
+  const payer = await assertCanAsk(env.DB, ctx.locals.user.id);
 
   const [history, sources, datasets, rag] = await Promise.all([
     listMessages(env.DB, id),
@@ -57,7 +59,7 @@ export const POST: APIRoute = handler(async (ctx) => {
   const userMessage = await insertMessage(env.DB, id, 'user', question);
   // Отчита се на задаване, не на успешен отговор: иначе повтарящ се въпрос
   // при грешка в модела не се брои и лимитът се обхожда.
-  await countQuestion(env.DB, ctx.locals.user.id);
+  await countQuestion(env.DB, ctx.locals.user.id, payer);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

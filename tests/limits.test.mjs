@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 const {
   getEntitlement, getUsage, saveSubscription, assertCanCreateNotebook,
   assertCanAsk, assertCanMakeAudio, countQuestion, countAudio,
-  markEventProcessed, findUserByCustomerId, QuotaError,
+  markEventProcessed, findUserByCustomerId, QuotaError, adminSetPlan,
 } = await import('../src/lib/limits.ts');
-const { currentPeriod, PLANS } = await import('../src/lib/plans.ts');
+const { currentPeriod, PLANS, BUSINESS } = await import('../src/lib/plans.ts');
+const { setOrgSeats } = await import('../src/lib/orgs.ts');
 
 /* ── A tiny in-memory stand-in for the bits of D1 that limits.ts uses ────── */
 
@@ -14,6 +15,9 @@ function makeDb() {
   const counters = new Map();      // `${user}|${period}` -> {questions, audio}
   const notebooks = new Map();     // userId -> count
   const events = new Set();
+  const orgs = new Map();          // orgId -> {seats}
+  const orgMembers = new Set();    // `${orgId}|${userId}`
+  const orgCounters = new Map();   // `${orgId}|${period}` -> questions
 
   function run(sql, binds) {
     const s = sql.replace(/\s+/g, ' ').trim();
@@ -58,6 +62,29 @@ function makeDb() {
       events.add(binds[0]);
       return { run: { meta: { changes: 1 } } };
     }
+    if (s.startsWith('SELECT o.id AS org_id')) {
+      const [period, user] = binds;
+      const results = [];
+      for (const [id, org] of orgs) {
+        if (org.seats > 0 && orgMembers.has(`${id}|${user}`)) {
+          results.push({ org_id: id, seats: org.seats, used: orgCounters.get(`${id}|${period}`) ?? 0 });
+        }
+      }
+      results.sort((a, b) => (a.org_id < b.org_id ? -1 : 1));
+      return { all: results };
+    }
+    if (s.startsWith('INSERT INTO org_usage_counters')) {
+      const key = `${binds[0]}|${binds[1]}`;
+      orgCounters.set(key, (orgCounters.get(key) ?? 0) + 1);
+      return { run: { meta: { changes: 1 } } };
+    }
+    if (s.startsWith('UPDATE organizations SET seats')) {
+      const [seats, id] = binds;
+      const org = orgs.get(id);
+      if (!org) return { run: { meta: { changes: 0 } } };
+      org.seats = seats;
+      return { run: { meta: { changes: 1 } } };
+    }
     throw new Error('unexpected sql: ' + s);
   }
 
@@ -68,12 +95,17 @@ function makeDb() {
         bind: (...b) => { binds = b; return api; },
         first: async () => run(sql, binds).first ?? null,
         run: async () => run(sql, binds).run ?? { meta: { changes: 0 } },
-        all: async () => ({ results: [] }),
+        all: async () => ({ results: run(sql, binds).all ?? [] }),
       };
       return api;
     },
     // test helpers
     setNotebooks: (user, n) => notebooks.set(user, n),
+    setOrg: (id, seats) => orgs.set(id, { seats }),
+    getOrgSeats: (id) => orgs.get(id)?.seats,
+    addMember: (org, user) => orgMembers.add(`${org}|${user}`),
+    setOrgUsed: (org, period, n) => orgCounters.set(`${org}|${period}`, n),
+    orgUsed: (org, period) => orgCounters.get(`${org}|${period}`) ?? 0,
   };
   return db;
 }
@@ -186,6 +218,83 @@ usage = await getUsage(db, U);
 assert.equal(usage.audio, freeAudio);
 assert.equal((await getUsage(db, 'u_other')).questions, 0);
 t('counters are per user and per month');
+
+console.log('\nbusiness org pools');
+db = makeDb();
+db.setOrg('org_1', 2); // 2 места × 300 = 600 въпроса в пакета
+db.addMember('org_1', U);
+
+let payer = await assertCanAsk(db, U);
+assert.deepEqual(payer, { via: 'personal' });
+t('with personal quota left the personal plan pays, org membership or not');
+
+for (let i = 0; i < PLANS.free.limits.questionsPerMonth; i++) await countQuestion(db, U);
+payer = await assertCanAsk(db, U);
+assert.deepEqual(payer, { via: 'org', orgId: 'org_1' });
+t('an exhausted personal quota falls over to the org pool');
+
+await countQuestion(db, U, payer);
+assert.equal(db.orgUsed('org_1', currentPeriod()), 1);
+assert.equal((await getUsage(db, U)).questions, PLANS.free.limits.questionsPerMonth);
+t('an org-paid question hits the org counter, not the personal one');
+
+db.setOrgUsed('org_1', currentPeriod(), 2 * BUSINESS.questionsPerSeat);
+await assert.rejects(() => assertCanAsk(db, U), /пакет на организацията/);
+t('a drained pool refuses with a message naming the org pool');
+
+// Член на организация БЕЗ платени места не вижда никакъв пакет.
+db.setOrg('org_free', 0);
+db.addMember('org_free', 'u_lone');
+for (let i = 0; i < PLANS.free.limits.questionsPerMonth; i++) await countQuestion(db, 'u_lone');
+await assert.rejects(() => assertCanAsk(db, 'u_lone'), (err) => {
+  assert.ok(err instanceof QuotaError);
+  assert.doesNotMatch(err.message, /организаци/);
+  return true;
+});
+t('an unpaid org grants no pool and the refusal does not mention one');
+
+console.log('\nadmin plan control');
+db = makeDb();
+await adminSetPlan(db, U, 'pro');
+assert.equal((await getEntitlement(db, U)).plan.id, 'pro');
+t('an admin-set plan grants entitlement without Stripe ids');
+
+await adminSetPlan(db, U, 'free');
+assert.equal((await getEntitlement(db, U)).plan.id, 'free');
+t('setting free takes a manual plan away');
+
+await saveSubscription(db, U, {
+  plan: 'plus', status: 'active', interval: 'month',
+  stripeCustomerId: 'cus_9', stripeSubscriptionId: 'sub_9',
+  currentPeriodEnd: Date.now() + 30 * 86_400_000, cancelAtPeriodEnd: false,
+});
+await assert.rejects(() => adminSetPlan(db, U, 'pro'), /Stripe/);
+assert.equal((await getEntitlement(db, U)).plan.id, 'plus');
+t('a live Stripe subscription refuses the manual override');
+
+await saveSubscription(db, U, {
+  plan: 'plus', status: 'canceled', interval: 'month',
+  stripeCustomerId: 'cus_9', stripeSubscriptionId: 'sub_9',
+  currentPeriodEnd: Date.now() - 86_400_000, cancelAtPeriodEnd: false,
+});
+await adminSetPlan(db, U, 'pro');
+assert.equal((await getEntitlement(db, U)).plan.id, 'pro');
+t('a dead Stripe subscription no longer blocks a manual plan');
+
+console.log('\norg seats');
+db = makeDb();
+db.setOrg('org_1', 0);
+await setOrgSeats(db, 'org_1', 12);
+assert.equal(db.getOrgSeats('org_1'), 12);
+await setOrgSeats(db, 'org_1', 0);
+assert.equal(db.getOrgSeats('org_1'), 0);
+t('seats can be granted and taken back');
+
+for (const bad of [2.5, -1, 10_001, Number.NaN]) {
+  await assert.rejects(() => setOrgSeats(db, 'org_1', bad), /цяло число/);
+}
+await assert.rejects(() => setOrgSeats(db, 'org_nope', 5), /организация/);
+t('seats validate as a bounded integer and an unknown org is refused');
 
 console.log('\nwebhook idempotency');
 db = makeDb();
