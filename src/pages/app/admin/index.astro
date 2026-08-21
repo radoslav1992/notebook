@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../../layouts/Base.astro';
 import Chrome from '../../../components/Chrome.astro';
+import AdminAccounts from '../../../components/AdminAccounts';
 import AdminDatasets from '../../../components/AdminDatasets';
 import { listAllDatasets, requireAdmin } from '../../../lib/datasets';
 import '../../../styles/app.css';
@@ -20,7 +21,7 @@ try {
 const datasets = await listAllDatasets(env.DB);
 ---
 
-<Base title="Набори — Записки" description="Управление на общите набори.">
+<Base title="Админ — Записки" description="Управление на набори, планове и организации.">
   <Chrome user={user} />
   <div class="settings-wrap">
     <h1>Набори</h1>
@@ -29,6 +30,14 @@ const datasets = await listAllDatasets(env.DB);
       вгражда веднъж — един запис обслужва всички.
     </p>
     <AdminDatasets datasets={datasets} client:load />
+
+    <h1 style="margin-top: 40px;">Сметки</h1>
+    <p class="admin-lead">
+      Ръчните планове и платените места на организациите — за продажби по фактура, преди и извън
+      Stripe. Организация с платени места получава общ месечен пакет въпроси, който членовете ѝ
+      харчат, щом личната им квота свърши.
+    </p>
+    <AdminAccounts client:load />
   </div>
 </Base>
 

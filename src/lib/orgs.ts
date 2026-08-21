@@ -232,3 +232,53 @@ export async function releaseOrgsOfUser(db: D1Database, userId: string): Promise
       .run();
   }
 }
+
+/* ── Админ: платени места ────────────────────────────────────────────────── */
+
+export interface OrgAdminRow {
+  id: string;
+  name: string;
+  members: number;
+  seats: number;
+  /** Въпроси от общия пакет, похарчени този месец. */
+  questionsUsed: number;
+}
+
+/** Всички организации, както ги вижда админът: членове, места, разход. */
+export async function listOrgsAdmin(db: D1Database, period: string): Promise<OrgAdminRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT o.id, o.name, o.seats,
+              (SELECT COUNT(*) FROM org_members m WHERE m.org_id = o.id) AS members,
+              COALESCE(u.questions, 0) AS used
+       FROM organizations o
+         LEFT JOIN org_usage_counters u ON u.org_id = o.id AND u.period = ?
+       ORDER BY o.name`,
+    )
+    .bind(period)
+    .all<{ id: string; name: string; seats: number; members: number; used: number }>();
+
+  return (results ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    members: r.members,
+    seats: r.seats,
+    questionsUsed: r.used,
+  }));
+}
+
+/**
+ * Задава платените места. Нула връща организацията на обикновена — библиотеката
+ * остава, пакетът изчезва. Минимумът от 10 места е търговско условие, не
+ * техническо: админът може да въведе колкото е договорено.
+ */
+export async function setOrgSeats(db: D1Database, orgId: string, seats: number): Promise<void> {
+  if (!Number.isInteger(seats) || seats < 0 || seats > 10_000) {
+    throw new HttpError(400, 'Местата са цяло число между 0 и 10000.');
+  }
+  const res = await db
+    .prepare('UPDATE organizations SET seats = ? WHERE id = ?')
+    .bind(seats, orgId)
+    .run();
+  if (!res.meta.changes) throw new HttpError(404, 'Няма такава организация.');
+}

@@ -1,6 +1,7 @@
 import { HttpError } from './db';
 import { now } from './ids';
 import {
+  BUSINESS,
   type BillingInterval,
   type Plan,
   type PlanId,
@@ -133,15 +134,64 @@ export async function assertCanCreateNotebook(
   }
 }
 
-export async function assertCanAsk(db: D1Database, userId: string): Promise<void> {
+/**
+ * Кой плаща въпроса: собственият план или общият пакет на организация.
+ * Отчитането (`countQuestion`) трябва да получи същата стойност — иначе
+ * въпросът се разрешава от единия джоб, а се удържа от другия.
+ */
+export type QuestionPayer = { via: 'personal' } | { via: 'org'; orgId: string };
+
+export async function assertCanAsk(db: D1Database, userId: string): Promise<QuestionPayer> {
   const [ent, usage] = await Promise.all([getEntitlement(db, userId), getUsage(db, userId)]);
   const max = ent.plan.limits.questionsPerMonth;
-  if (usage.questions >= max) {
+  if (usage.questions < max) return { via: 'personal' };
+
+  // Личната квота е изчерпана. Членството в организация с платени места дава
+  // достъп до общия ѝ пакет — нарочно СЛЕД личната квота: безплатните 50 не
+  // товарят пакета на екипа, а платеният Плюс не спира да значи нищо.
+  const pools = await orgPools(db, userId);
+  for (const pool of pools) {
+    if (pool.used < pool.total) return { via: 'org', orgId: pool.orgId };
+  }
+
+  if (pools.length > 0) {
     throw new QuotaError(
-      `Изчерпа ${max} въпроса за този месец. Броячът се нулира на 1-во число.`,
+      `Изчерпа ${max} лични въпроса, а общият пакет на организацията също е изчерпан. Броячите се нулират на 1-во число.`,
       ent.plan.id,
     );
   }
+  throw new QuotaError(
+    `Изчерпа ${max} въпроса за този месец. Броячът се нулира на 1-во число.`,
+    ent.plan.id,
+  );
+}
+
+interface OrgPool {
+  orgId: string;
+  /** Пакетът: платени места × въпроси на място. */
+  total: number;
+  used: number;
+}
+
+/** Пакетите, до които човекът има достъп — само организации с платени места. */
+async function orgPools(db: D1Database, userId: string): Promise<OrgPool[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT o.id AS org_id, o.seats, COALESCE(u.questions, 0) AS used
+       FROM org_members m
+         JOIN organizations o ON o.id = m.org_id
+         LEFT JOIN org_usage_counters u ON u.org_id = o.id AND u.period = ?
+       WHERE m.user_id = ? AND o.seats > 0
+       ORDER BY o.id`,
+    )
+    .bind(currentPeriod(), userId)
+    .all<{ org_id: string; seats: number; used: number }>();
+
+  return (results ?? []).map((r) => ({
+    orgId: r.org_id,
+    total: r.seats * BUSINESS.questionsPerSeat,
+    used: r.used,
+  }));
 }
 
 export async function assertCanMakeAudio(db: D1Database, userId: string): Promise<void> {
@@ -161,7 +211,21 @@ export async function assertCanMakeAudio(db: D1Database, userId: string): Promis
 
 /* ── Отчитане ────────────────────────────────────────────────────────────── */
 
-export async function countQuestion(db: D1Database, userId: string): Promise<void> {
+export async function countQuestion(
+  db: D1Database,
+  userId: string,
+  payer: QuestionPayer = { via: 'personal' },
+): Promise<void> {
+  if (payer.via === 'org') {
+    await db
+      .prepare(
+        `INSERT INTO org_usage_counters (org_id, period, questions) VALUES (?, ?, 1)
+         ON CONFLICT(org_id, period) DO UPDATE SET questions = questions + 1`,
+      )
+      .bind(payer.orgId, currentPeriod())
+      .run();
+    return;
+  }
   await bump(db, userId, 'questions');
 }
 
@@ -223,6 +287,38 @@ export async function saveSubscription(
       now(),
     )
     .run();
+}
+
+/**
+ * Ръчно задаване на план от админ — за сделки по фактура и жестове, преди (и
+ * извън) Stripe. Пише същия ред като webhook-а, но без Stripe идентификатори и
+ * без часовник: планът важи, докато админ не го смени.
+ *
+ * Отказва, ако планът се управлява от жив Stripe абонамент: следващото събитие
+ * от Stripe така или иначе би презаписало реда, тоест „промяната“ би била лъжа
+ * с падеж. Такъв абонамент се сменя през Stripe, не оттук.
+ */
+export async function adminSetPlan(
+  db: D1Database,
+  userId: string,
+  plan: PlanId,
+): Promise<void> {
+  const ent = await getEntitlement(db, userId);
+  if (ent.stripeSubscriptionId && isActiveStatus(ent.status)) {
+    throw new HttpError(
+      409,
+      'Планът се управлява от Stripe абонамент — смени го през Stripe, иначе следващото му събитие ще презапише ръчната промяна.',
+    );
+  }
+  await saveSubscription(db, userId, {
+    plan,
+    status: 'active',
+    interval: 'month',
+    stripeCustomerId: ent.stripeCustomerId,
+    stripeSubscriptionId: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+  });
 }
 
 export async function findUserByCustomerId(

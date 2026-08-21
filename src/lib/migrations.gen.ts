@@ -10,4 +10,5 @@ export const EXPECTED_MIGRATIONS: string[] = [
   '0007_use_case.sql',
   '0008_datasets.sql',
   '0009_public_datasets.sql',
+  '0010_business.sql',
 ];
