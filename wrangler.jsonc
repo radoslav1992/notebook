@@ -109,7 +109,7 @@
   //   CHAT_MODEL        gemini-3.6-flash              src/lib/ai/defaults.ts
   //   CHAT_MODEL_PRO    (unset — paid plans get CHAT_MODEL)
   //   EMBED_MODEL       gemini-embedding-001          src/lib/ai/defaults.ts
-  //   TTS_MODEL         gemini-3.1-flash-tts-preview  src/lib/ai/defaults.ts
+  //   TTS_MODEL         google/gemini-3.1-flash-tts   src/lib/ai/defaults.ts
   //   EMBED_DIMENSIONS  derived from EMBED_MODEL      src/lib/ai/select.ts
   //   RAG_BACKEND       vectorize                     src/lib/api.ts
   //   RESPONSE_LANGUAGE bg                            src/lib/api.ts

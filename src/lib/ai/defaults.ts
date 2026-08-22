@@ -23,15 +23,18 @@ export const FALLBACK_CHAT_MODEL = 'gemini-3.6-flash';
 export const FALLBACK_EMBED_MODEL = 'gemini-embedding-001';
 
 /**
- * Multi-speaker TTS.
+ * Multi-speaker TTS — по подразбиране през Cloudflare (партньорският Gemini).
  *
- * Внимавай със суфикса: моделът се води „Gemini 3.1 Flash TTS“, но в API-то е
- * `gemini-3.1-flash-tts-preview`. Без `-preview` отговорът е „is not found for
- * API version v1beta“.
+ * Гласът е същият Gemini TTS; разликата е чия сметка минава и чий ключ трябва:
+ * с `google/*` речта върви през Workers AI binding-а, без GEMINI_API_KEY.
+ * Обратният път е на един низ разстояние: `TTS_MODEL:
+ * "gemini-3.1-flash-tts-preview"` (внимавай със суфикса — Google API-то го иска,
+ * без него отговорът е „is not found for API version v1beta“; Cloudflare
+ * каталогът е без суфикса).
  *
- * `gemini-2.5-flash-preview-tts` стоеше тук и вече го няма — цялото 2.5
- * семейство отпадна, не само `gemini-2.5-flash` и `gemini-2.5-pro`. Тоест и
- * тази стойност ще остарее: `GET /api/models` (`usable.tts`) казва кое работи с
- * ключа, а при несъществуващ модел самата грешка изброява приетите.
+ * Историята на това поле е предупреждение: `gemini-3.1-flash-tts` (по блог — не
+ * съществуваше при Google), после `gemini-2.5-flash-preview-tts` (отпадна с
+ * цялото 2.5 семейство). При несъществуващ модел грешката изброява приетите, а
+ * `GET /api/models` (`usable.tts`) казва кое работи с ключа.
  */
-export const FALLBACK_TTS_MODEL = 'gemini-3.1-flash-tts-preview';
+export const FALLBACK_TTS_MODEL = 'google/gemini-3.1-flash-tts';
