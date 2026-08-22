@@ -125,7 +125,7 @@ Luna има и кеширан вход по $0.02 — десет пъти по-�
 | `CHAT_MODEL` | `gemini-3.6-flash` | `src/lib/ai/defaults.ts` |
 | `CHAT_MODEL_PRO` | няма — платените ползват `CHAT_MODEL` | |
 | `EMBED_MODEL` | `gemini-embedding-001` | `src/lib/ai/defaults.ts` |
-| `TTS_MODEL` | `gemini-3.1-flash-tts-preview` | `src/lib/ai/defaults.ts` |
+| `TTS_MODEL` | `google/gemini-3.1-flash-tts` (през Cloudflare) | `src/lib/ai/defaults.ts` |
 | `EMBED_DIMENSIONS` | по модела | `src/lib/ai/select.ts` |
 | `RAG_BACKEND` | `vectorize` | `src/lib/api.ts` |
 | `RESPONSE_LANGUAGE` | `bg` | `src/lib/api.ts` |
@@ -158,9 +158,12 @@ Google изтегля модели по-рано от обявената дат�
 Отваряш го в браузъра, докато си влязъл, и слагаш име оттам.
 
 **Имената на TTS моделите особено не се четат от блогове.** „Gemini 3.1 Flash
-TTS“ съществува в API-то като `gemini-3.1-flash-tts-preview`, а не като
+TTS“ съществува в Google API-то като `gemini-3.1-flash-tts-preview`, а не като
 `gemini-3.1-flash-tts` — второто връща „is not found for API version v1beta“.
-Суфиксът `-preview` е част от името, а не бележка за етапа на модела.
+Суфиксът `-preview` е част от името, а не бележка за етапа на модела. В каталога
+на Workers AI същият модел е БЕЗ суфикса: `google/gemini-3.1-flash-tts` — това е
+и стойността по подразбиране, тоест речта минава през Cloudflare, освен ако
+`TTS_MODEL` не каже друго.
 
 Освен това 2.5 семейството отпадна цялото, включително
 `gemini-2.5-flash-preview-tts`. Затова при несъществуващ TTS модел грешката под
@@ -272,10 +275,11 @@ Google стриймва винаги. За модел през Cloudflare при
 - **Дали `stream: true` минава при партньорските модели.** Затова има проба с
   запомняне вместо предположение.
 - **Имената на TTS моделите се сменят по-често от всичко останало.** Първо беше
-  сложено `gemini-3.1-flash-tts` (по блог — не съществува), после
+  сложено `gemini-3.1-flash-tts` (по блог — при Google не съществува), после
   `gemini-2.5-flash-preview-tts` (вече отпаднало заедно с цялото 2.5 семейство).
-  Сега е `gemini-3.1-flash-tts-preview`. Единственият надежден източник е
-  `/api/models`, а не документация или блог.
+  Сега по подразбиране е `google/gemini-3.1-flash-tts` през Workers AI; за пътя
+  през Google важи `gemini-3.1-flash-tts-preview`, а единственият надежден
+  източник за него е `/api/models`, не документация или блог.
 - **Дали Grok TTS (`xai/…`) поддържа български.** Пише „20+ езика“, но списъкът
   не се вижда. Ако го поддържа, ще стане `TTS_MODEL` без промяна в кода — пътят
   за `google/*` обаче е с Gemini-тяло, така че за `xai/*` ще трябва проверка.

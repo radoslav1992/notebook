@@ -137,15 +137,17 @@ t('a Google model without a key names the role that wants it', () => {
   assert.match(err.message, /GEMINI_API_KEY/);
 });
 
-t('a Cloudflare model without the binding says which line to add', () => {
-  const err = caught(() =>
-    buildAi({
-      chatModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-      embedModel: 'gemini-embedding-001',
-      ttsModel: 'gemini-3.1-flash-tts-preview',
-      googleKey: 'k',
-    }),
-  );
+await at('a Cloudflare model without the binding says which line to add - on use', async () => {
+  // Нарочно НЕ при сглобяването: Cloudflare модел в една роля не бива да съборя
+  // другите две (речта по подразбиране е през Cloudflare, а astro dev няма binding).
+  const ai = buildAi({
+    chatModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    embedModel: 'gemini-embedding-001',
+    ttsModel: 'gemini-3.1-flash-tts-preview',
+    googleKey: 'k',
+  });
+  // Заглушката хвърля синхронно — затова caught, а не await/rejects.
+  const err = caught(() => ai.chat.generateText({ prompt: 'проба' }));
   assert.ok(err instanceof AiError);
   assert.match(err.message, /"ai": \{ "binding": "AI" \}/);
 });
@@ -418,28 +420,51 @@ t('the built-in default is a model new keys can still use', () => {
   assert.equal(resolveChatModel({}, 'gemini-2.5-flash', true), FALLBACK_CHAT_MODEL);
 });
 
-t('the default TTS id keeps its -preview suffix and is not from 2.5', () => {
-  // Двете начина, по които това вече се обърка: „Gemini 3.1 Flash TTS“ в API-то е
-  // `gemini-3.1-flash-tts-preview` (без суфикса → „is not found“), а цялото 2.5
-  // семейство отпадна, включително `gemini-2.5-flash-preview-tts`.
+t('the default TTS goes through Cloudflare and is not from 2.5', () => {
+  // През Cloudflare гласът е същият Gemini, но без GEMINI_API_KEY за речта и
+  // без суфикса `-preview` (той е причудливост на Google API-то, не на модела).
+  // 2.5 семейството отпадна изцяло — стойност от него значи мъртва инсталация.
   assert.ok(FALLBACK_TTS_MODEL.includes('tts'), FALLBACK_TTS_MODEL);
-  assert.ok(!FALLBACK_TTS_MODEL.startsWith('gemini-2.5'), FALLBACK_TTS_MODEL);
-  assert.ok(/-preview$/.test(FALLBACK_TTS_MODEL), 'суфиксът е част от името');
+  assert.ok(FALLBACK_TTS_MODEL.startsWith('google/'), 'по подразбиране речта е през Workers AI');
+  assert.ok(!FALLBACK_TTS_MODEL.includes('2.5'), FALLBACK_TTS_MODEL);
 });
 
 t('with no variables set at all, the defaults still make a working setup', () => {
   // wrangler.jsonc нарочно не задава vars — иначе deploy заменя стойностите от
   // dashboard-а. Значи стойностите по подразбиране в кода са единственото, което
-  // държи свеж клон да работи.
+  // държи свеж клон да работи. Binding-ът `ai` е винаги наличен след deploy —
+  // стои в wrangler.jsonc — затова тестът го подава.
+  const ai = buildAi({
+    chatModel: FALLBACK_CHAT_MODEL,
+    embedModel: FALLBACK_EMBED_MODEL,
+    ttsModel: FALLBACK_TTS_MODEL,
+    googleKey: 'k',
+    ai: { run: async () => ({}) },
+  });
+  assert.equal(ai.chat.model, FALLBACK_CHAT_MODEL);
+  assert.equal(ai.embed.dimensions, 1536, 'трябва да съвпада с индекса от SETUP.md');
+  assert.equal(ai.tts.model, FALLBACK_TTS_MODEL);
+  assert.ok(ai.google, 'ключът е нужен за чата и вгражданията по подразбиране');
+});
+
+at('without the Workers AI binding, only the Cloudflare role fails - on use, not on build', async () => {
+  // astro dev без Cloudflare няма binding. Cloudflare модел в ЕДНА роля не бива
+  // да събаря сглобяването на другите две — иначе TTS по подразбиране чупи чата.
   const ai = buildAi({
     chatModel: FALLBACK_CHAT_MODEL,
     embedModel: FALLBACK_EMBED_MODEL,
     ttsModel: FALLBACK_TTS_MODEL,
     googleKey: 'k',
   });
-  assert.equal(ai.chat.model, FALLBACK_CHAT_MODEL);
-  assert.equal(ai.embed.dimensions, 1536, 'трябва да съвпада с индекса от SETUP.md');
-  assert.ok(ai.google, 'нито един по подразбиране не иска Workers AI binding');
+  assert.equal(ai.chat.model, FALLBACK_CHAT_MODEL, 'чатът се сглобява въпреки липсващия binding');
+  await assert.rejects(
+    async () => ai.tts.speak({ text: 'проба' }),
+    (err) => {
+      assert.match(err.message, /Workers AI binding/);
+      assert.match(err.message, /речта/);
+      return true;
+    },
+  );
 });
 
 console.log('\nembedding width vs the index');

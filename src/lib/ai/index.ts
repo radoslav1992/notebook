@@ -72,13 +72,11 @@ export function buildAi(cfg: AiConfig): Ai {
   };
 
   const cloudflare = (model: string, role: string): CloudflareAi => {
-    if (!cfg.ai) {
-      throw new AiError(
-        500,
-        `Моделът ${model} за ${role} е при Cloudflare, но липсва Workers AI binding. Добави "ai": { "binding": "AI" } в wrangler.jsonc.`,
-      );
-    }
-    return new CloudflareAi({ ai: cfg.ai, model, dimensions });
+    if (cfg.ai) return new CloudflareAi({ ai: cfg.ai, model, dimensions });
+    // Без binding (astro dev без Cloudflare, тестове) грешката се хвърля при
+    // ПОЛЗВАНЕ, не при сглобяване: иначе Cloudflare модел в една роля събаря и
+    // другите две, които са си наред — а TTS по подразбиране е точно такъв.
+    return missingBinding(model, dimensions, role);
   };
 
   return {
@@ -96,6 +94,26 @@ export function buildAi(cfg: AiConfig): Ai {
         : cloudflare(cfg.ttsModel, 'речта'),
     google,
   };
+}
+
+/** Обектът, който отказва чак когато го ползват — с грешка какво да се добави. */
+function missingBinding(model: string, dimensions: number, role: string): CloudflareAi {
+  const fail = (): never => {
+    throw new AiError(
+      500,
+      `Моделът ${model} за ${role} е при Cloudflare, но липсва Workers AI binding. Добави "ai": { "binding": "AI" } в wrangler.jsonc.`,
+    );
+  };
+  const stub: Pick<CloudflareAi, 'model' | 'dimensions'> & Record<string, unknown> = {
+    model,
+    dimensions,
+    generateText: fail,
+    generateJson: fail,
+    stream: fail,
+    embed: fail,
+    speak: fail,
+  };
+  return stub as unknown as CloudflareAi;
 }
 
 /**

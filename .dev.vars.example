@@ -32,3 +32,9 @@ SESSION_SECRET="сложи-тук-дълъг-случаен-низ"
 # ── Адресът на приложението ─────────────────────────────────────────────────
 # Локално се взима от заявката; в production го задай в wrangler.jsonc.
 # PUBLIC_SITE_URL="http://localhost:4321"
+
+# ── Реч при `astro dev` (без Cloudflare) ─────────────────────────────────────
+# По подразбиране речта е през Workers AI (google/gemini-3.1-flash-tts), а
+# binding-ът го има само под wrangler. За аудио преглед при astro dev върни
+# пътя през Google — суфиксът -preview е задължителен там:
+# TTS_MODEL="gemini-3.1-flash-tts-preview"
